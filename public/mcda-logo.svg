@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="300" viewBox="0 0 1000 300" role="img" aria-labelledby="title desc">
+  <title id="title">MCDA</title>
+  <desc id="desc">Multi-Criteria Decision Analysis</desc>
+  <rect width="1000" height="300" rx="28" fill="white" fill-opacity="0"/>
+  <text x="500" y="155" text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="112" font-weight="900" letter-spacing="18" fill="#183b70">MCDA</text>
+  <text x="500" y="220" text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="30" font-weight="700" letter-spacing="2" fill="#536078">Multi-Criteria Decision Analysis</text>
+</svg>
