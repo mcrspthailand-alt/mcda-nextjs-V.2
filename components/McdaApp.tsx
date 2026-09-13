@@ -19,7 +19,7 @@ export default function McdaApp() {
     if (existing) return;
 
     const script = document.createElement('script');
-    script.src = '/mcda-engine.js';
+    script.src = '/mcda-loader.js';
     script.async = false;
     script.dataset.mcdaEngine = 'v25';
     document.body.appendChild(script);
