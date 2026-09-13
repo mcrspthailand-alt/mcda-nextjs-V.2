@@ -1,0 +1,37 @@
+    /* v23 — grayscale sensitivity hierarchy + fullscreen expand/collapse */
+    .sensitivity-expandable{position:relative}
+    .chart-title-actions,.sensitivity-head-actions,.sensitivity-master-legend-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
+    .sensitivity-fullscreen-btn{display:inline-flex;align-items:center;justify-content:center;flex:0 0 30px;width:30px;height:30px;border:1px solid #cfd6df;border-radius:8px;background:#fff;color:#3f4754;cursor:pointer;padding:0;transition:.15s ease;box-shadow:0 1px 3px rgba(16,24,40,.04)}
+    .sensitivity-fullscreen-btn:hover{background:#f4f5f7;border-color:#8f98a5;color:#111;transform:translateY(-1px)}
+    .sensitivity-fullscreen-btn:focus-visible{outline:2px solid #6b7280;outline-offset:2px}
+    .sensitivity-fullscreen-btn svg{width:15px;height:15px;display:block;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+    .sensitivity-fullscreen-btn .fullscreen-collapse-icon{display:none}
+    .sensitivity-expandable:fullscreen .sensitivity-fullscreen-btn .fullscreen-expand-icon,
+    .sensitivity-expandable.fullscreen-fallback .sensitivity-fullscreen-btn .fullscreen-expand-icon{display:none}
+    .sensitivity-expandable:fullscreen .sensitivity-fullscreen-btn .fullscreen-collapse-icon,
+    .sensitivity-expandable.fullscreen-fallback .sensitivity-fullscreen-btn .fullscreen-collapse-icon{display:inline-flex}
+    .sensitivity-expandable:fullscreen,
+    .sensitivity-expandable.fullscreen-fallback{background:#fff;padding:20px;box-sizing:border-box;overflow:auto}
+    .sensitivity-expandable:fullscreen{width:100vw;height:100vh}
+    .sensitivity-expandable.fullscreen-fallback{position:fixed!important;inset:10px!important;z-index:10050!important;width:auto!important;height:auto!important;box-shadow:0 24px 70px rgba(0,0,0,.28)!important;border-radius:14px!important}
+    .sensitivity-chart-panel:fullscreen .chart-scroll,
+    .sensitivity-chart-panel.fullscreen-fallback .chart-scroll{display:flex;align-items:center;justify-content:center;overflow:auto;min-height:calc(100vh - 115px)}
+    .sensitivity-chart-panel:fullscreen .sensitivity-svg,
+    .sensitivity-chart-panel.fullscreen-fallback .sensitivity-svg{width:100%;min-width:1000px;max-height:calc(100vh - 125px);height:auto}
+    .sensitivity-table-panel:fullscreen .table-wrap,
+    .sensitivity-table-panel.fullscreen-fallback .table-wrap,
+    .sensitivity-master-legend:fullscreen .table-wrap,
+    .sensitivity-master-legend.fullscreen-fallback .table-wrap{height:calc(100vh - 105px);max-height:none;overflow:auto}
+    .sensitivity-master-legend:fullscreen,
+    .sensitivity-master-legend.fullscreen-fallback{margin:0;border-radius:0}
+    .sensitivity-head-actions>span{font-size:11px;color:var(--muted);text-align:right}
+    .sensitivity-master-legend-head{align-items:center}
+    .sensitivity-master-legend-actions>span{font-size:10.5px;color:#7a8497;text-align:right;line-height:1.45}
+    .sensitivity-legend-table td:first-child,.sensitivity-legend-table th:first-child{position:sticky;left:0;background:#fff;z-index:3;text-align:left;font-weight:800;min-width:160px}
+    .sensitivity-legend-table td:nth-child(2),.sensitivity-legend-table th:nth-child(2){position:static;background:inherit;text-align:center;font-weight:inherit;min-width:auto}
+    .legend-line-swatch{display:inline-block;width:34px;min-height:1px;border-radius:99px;vertical-align:middle}
+    .legend-rank-good{font-weight:950;color:#111}
+    .sensitivity-gray-note{display:inline-flex;align-items:center;gap:6px;color:#5f6670;font-size:10px;font-weight:650}
+    .sensitivity-gray-note::before{content:"";display:inline-block;width:27px;height:4px;border-radius:99px;background:linear-gradient(90deg,#111 0 30%,#7d7d7d 60%,#b4b4b4 100%)}
+    @media(max-width:640px){.chart-title-actions,.sensitivity-head-actions,.sensitivity-master-legend-actions{align-items:flex-end}.sensitivity-master-legend-head{align-items:flex-start}.sensitivity-master-legend-actions{width:100%;justify-content:space-between}.sensitivity-head-actions>span{display:none}}
+
