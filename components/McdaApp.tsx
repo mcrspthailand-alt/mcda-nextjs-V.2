@@ -15,6 +15,9 @@ export default function McdaApp() {
     // The migrated v25 calculation engine expects SheetJS on window.XLSX.
     window.XLSX = XLSX;
 
+    const logo = document.querySelector<HTMLImageElement>('.hero-logo');
+    if (logo) logo.src = '/mcda-logo.svg';
+
     const existing = document.querySelector<HTMLScriptElement>('script[data-mcda-engine="v25"]');
     if (existing) return;
 
