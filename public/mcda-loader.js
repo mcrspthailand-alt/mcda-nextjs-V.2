@@ -1,11 +1,12 @@
 (async function(){
   try {
-    const parts = ['/engine/part-01.txt', '/engine/part-02.txt', '/engine/part-03.txt', '/engine/part-04.txt', '/engine/part-05.txt', '/engine/part-06.txt'];
-    const source = (await Promise.all(parts.map(async (url) => {
-      const response = await fetch(url, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`Cannot load ${url}: ${response.status}`);
-      return response.text();
-    }))).join('');
+    if (typeof DecompressionStream === 'undefined') {
+      throw new Error('This browser does not support DecompressionStream.');
+    }
+    const response = await fetch('/mcda-engine.js.gz', { cache: 'no-store' });
+    if (!response.ok || !response.body) throw new Error(`Cannot load MCDA engine: ${response.status}`);
+    const stream = response.body.pipeThrough(new DecompressionStream('gzip'));
+    const source = await new Response(stream).text();
     const blobUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
     const engine = document.createElement('script');
     engine.src = blobUrl;
@@ -14,6 +15,9 @@
   } catch (error) {
     console.error('MCDA engine bootstrap failed', error);
     const toast = document.getElementById('toast');
-    if (toast) { toast.textContent = 'ไม่สามารถโหลด MCDA engine ได้ กรุณารีเฟรชหน้าเว็บ'; toast.classList.add('show'); }
+    if (toast) {
+      toast.textContent = 'ไม่สามารถโหลด MCDA engine ได้ กรุณาใช้ Chrome / Edge รุ่นใหม่แล้วรีเฟรชหน้าเว็บ';
+      toast.classList.add('show');
+    }
   }
 })();
