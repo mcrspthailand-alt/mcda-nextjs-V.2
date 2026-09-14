@@ -12,11 +12,38 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - name: Install dependencies
         run: npm install
+
       - name: Build Next.js
         run: npm run build
+
+      - name: Build Docker image
+        run: docker build -t mcda-nextjs-v2:test .
+
+      - name: Run Docker container
+        run: docker run -d --name mcda-nextjs-v2 -p 3000:3000 mcda-nextjs-v2:test
+
+      - name: Smoke test Docker container
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health; then
+              echo "Container health check passed"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Container did not become healthy"
+          docker ps -a
+          docker logs mcda-nextjs-v2
+          exit 1
+
+      - name: Cleanup Docker container
+        if: always()
+        run: docker rm -f mcda-nextjs-v2 || true
