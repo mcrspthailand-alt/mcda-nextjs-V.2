@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "bcryptjs": "3.0.3",
+    "jose": "6.2.12",
     "next": "15.5.2",
     "pg": "8.23.0",
     "react": "19.1.0",
