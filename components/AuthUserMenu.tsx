@@ -10,6 +10,7 @@ type Entitlements = {
   usedToday: number;
   remainingToday: number | null;
   dailyLimit: number | null;
+  weeklyPriceThb: string;
 };
 
 function premiumEnd(value: string | null) {
@@ -19,6 +20,16 @@ function premiumEnd(value: string | null) {
     timeStyle: 'short',
     timeZone: 'Asia/Bangkok',
   }).format(new Date(value));
+}
+
+function priceLabel(value: string | undefined) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '59';
+  const hasSatang = Math.abs(amount - Math.trunc(amount)) > 0.000001;
+  return new Intl.NumberFormat('th-TH', {
+    minimumFractionDigits: hasSatang ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
 export default function AuthUserMenu() {
@@ -56,6 +67,7 @@ export default function AuthUserMenu() {
   if (!user) return null;
 
   const premium = entitlements?.plan === 'premium';
+  const upgradePrice = priceLabel(entitlements?.weeklyPriceThb);
 
   return (
     <div
@@ -122,7 +134,7 @@ export default function AuthUserMenu() {
           fontWeight: 800,
         }}
       >
-        {premium ? 'แพ็กเกจ' : 'อัปเกรด 59฿'}
+        {premium ? 'แพ็กเกจ' : `อัปเกรด ${upgradePrice}฿`}
       </button>
       <button
         type="button"
