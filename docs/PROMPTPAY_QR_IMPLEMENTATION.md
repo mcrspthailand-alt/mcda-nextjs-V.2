@@ -34,19 +34,30 @@ MCDA_PROMPTPAY_NATIONAL_ID=
 - National ID / Tax ID: sub-tag `02`, 13 digits
 - Amount: field `54` as decimal THB, e.g. `59.00`
 - Currency: `764` (THB)
-- CRC: CRC16-CCITT over the payload through `6304`
+- Order reference: Additional Data Field Template `62`, sub-tag `05` (Reference Label)
+- CRC: CRC16-CCITT over the complete payload through `6304`
 - The raw payload is passed directly to the `qrcode` encoder with a quiet zone; no pipe prefix, carriage returns, URL encoding, or merchant-specific wrapper is added.
 
-The implementation keeps the existing AMS client-guide point-of-initiation behavior and changes only the PromptPay proxy sub-tag/value according to the configured receiver type.
+For every MCDA payment order, `external_reference` (for example `MCDA...`) is embedded in the QR as `62.05` immediately before field `63`. CRC is recalculated after the reference is added. Existing payable orders also receive the reference automatically because the QR payload is generated dynamically from the stored order.
+
+Example structure:
+
+```text
+... + 62 <length> 05 <length> <ORDER_REFERENCE> + 6304 + <CRC16>
+```
+
+The implementation keeps the existing AMS client-guide point-of-initiation behavior and changes the PromptPay proxy sub-tag/value according to the configured receiver type.
 
 ## Payment verification
 
-Standard PromptPay Tag 29 QR does not embed `ref1/ref2`. Payment acceptance remains server-side and uses:
+Standard PromptPay Tag 29 QR does not use the merchant-specific `ref1/ref2` contract. The order reference is carried in `62.05`, while payment acceptance remains server-side and uses:
 
-- the selected payment order
+- the selected payment order / `external_reference`
 - expected amount and currency
 - AMS verification status
 - provider duplicate status
 - provider transaction reference uniqueness
+
+The verifier does not currently require the payment provider to echo field `62.05`, because the current AMS client contract does not guarantee a normalized field for that value. The server still sends the stored `external_reference` to AMS and validates the selected order independently.
 
 Do not commit the real PromptPay phone number or National ID / Tax ID. Configure the value through Easypanel/secret environment variables.
