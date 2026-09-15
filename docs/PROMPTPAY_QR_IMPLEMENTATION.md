@@ -10,7 +10,7 @@ Premium price:
 MCDA_PREMIUM_WEEKLY_PRICE_THB=59.00
 ```
 
-If this variable is omitted, the application defaults to `59.00` THB. The value must be positive and may contain up to 2 decimal places, for example `49`, `59.00`, or `79.50`.
+If this variable is omitted, the application defaults to `59.00` THB. The value must be positive and may contain up to 2 decimal places, for example `1.00`, `49`, `59.00`, or `79.50`.
 
 Preferred PromptPay receiver configuration:
 
@@ -46,7 +46,7 @@ MCDA_PROMPTPAY_NATIONAL_ID=
 - CRC: CRC16-CCITT over the complete payload through `6304`
 - The raw payload is passed directly to the `qrcode` encoder with a quiet zone; no pipe prefix, carriage returns, URL encoding, or merchant-specific wrapper is added.
 
-For every MCDA payment order, `external_reference` (for example `MCDA...`) is embedded in the QR as `62.05` immediately before field `63`. CRC is recalculated after the reference is added. Existing payable orders also receive the reference automatically because the QR payload is generated dynamically from the stored order.
+For every MCDA payment order, `external_reference` (for example `MCDA...`) is embedded in the QR as `62.05` immediately before field `63`. CRC is recalculated after the reference is added.
 
 Example structure:
 
@@ -54,7 +54,9 @@ Example structure:
 ... + 54 <length> <ORDER_AMOUNT> + 62 <length> 05 <length> <ORDER_REFERENCE> + 6304 + <CRC16>
 ```
 
-The Premium price environment setting is used when **creating a new payment order**. Once an order exists, its amount is stored in PostgreSQL and remains the source of truth for that order's QR and AMS `expected_amount`. Therefore changing the environment price does not silently change an already-created payable order.
+The Premium price environment setting is the source of truth when creating a payable order. If `MCDA_PREMIUM_WEEKLY_PRICE_THB` is changed and the service is redeployed/restarted, an existing non-expired `awaiting_payment` order with a different amount is marked `superseded` and will not be reused. The next payment action creates a new order, new order reference, and new QR using the current configured price. This prevents a stale QR from continuing to request the previous amount.
+
+Once a payment order is created at the current price, its stored amount remains the source of truth for that order's QR and AMS `expected_amount` until it is paid, expires, fails, or is superseded by a later price change.
 
 The implementation keeps the existing AMS client-guide point-of-initiation behavior and changes the PromptPay proxy sub-tag/value according to the configured receiver type.
 
