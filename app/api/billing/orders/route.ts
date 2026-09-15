@@ -4,11 +4,10 @@ import { getRequestUser } from '@/lib/request-user';
 import { getEntitlements } from '@/lib/membership';
 import {
   PAYMENT_PLAN,
-  buildPromptPayMobilePayload,
+  buildPromptPayPayload,
   createWeeklyPaymentOrder,
   findLatestPaymentOrder,
-  maskedPromptPayPhone,
-  paymentPromptPayPhone,
+  paymentPromptPayTarget,
   publicPaymentOrder,
   type PaymentOrder,
 } from '@/lib/billing';
@@ -18,7 +17,8 @@ export const dynamic = 'force-dynamic';
 
 async function responseOrder(order: PaymentOrder | null) {
   const publicOrder = publicPaymentOrder(order);
-  const payload = order ? buildPromptPayMobilePayload(order) : null;
+  const target = paymentPromptPayTarget();
+  const payload = order ? buildPromptPayPayload(order) : null;
   const qrDataUrl = payload
     ? await QRCode.toDataURL(payload, {
         width: 420,
@@ -30,9 +30,15 @@ async function responseOrder(order: PaymentOrder | null) {
   return {
     order: publicOrder,
     qrDataUrl,
-    paymentConfigured: Boolean(paymentPromptPayPhone()),
-    paymentMethod: 'promptpay_mobile',
-    promptPayAccount: maskedPromptPayPhone(),
+    paymentConfigured: Boolean(target),
+    paymentMethod: target
+      ? target.type === 'phone'
+        ? 'promptpay_mobile'
+        : 'promptpay_national_id'
+      : 'promptpay',
+    promptPayType: target?.type ?? null,
+    promptPayAccount: target?.masked ?? null,
+    promptPayLabel: target?.label ?? null,
     plan: PAYMENT_PLAN,
   };
 }
