@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Multi-Criteria Decision Analysis | Professional Ranking Dashboard',
+  title: 'MCDA Analysis',
   description:
-    'MCDA dashboard for TOPSIS, SAW, PROMETHEE II, VIKOR, MOORA, WASPAS, EDAS, ELECTRE I, COPRAS, ARAS, GRA, WPM, Distance Target, comparative ranking and sensitivity analysis.',
+    'MCDA Analysis platform with a brief history of multi-criteria decision analysis and an interactive dashboard for ranking, sensitivity analysis and multiple MCDA methods.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
