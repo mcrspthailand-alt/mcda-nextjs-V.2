@@ -39,14 +39,16 @@ function normalizeWeeklyPlanPrice(value: string | undefined) {
     throw new Error('MCDA_PREMIUM_WEEKLY_PRICE_THB must be a positive THB amount with at most 2 decimal places');
   }
 
-  const whole = BigInt(match[1]);
+  // Keep price parsing compatible with the project's ES2017 target. Avoid BigInt
+  // literals (for example 100n / 0n), which TypeScript rejects below ES2020.
+  const whole = match[1].replace(/^0+(?=\d)/, '');
   const decimals = (match[2] ?? '').padEnd(2, '0');
-  const satang = whole * 100n + BigInt(decimals);
-  if (satang <= 0n) {
+  const isZero = /^0+$/.test(whole) && decimals === '00';
+  if (isZero) {
     throw new Error('MCDA_PREMIUM_WEEKLY_PRICE_THB must be greater than 0');
   }
 
-  return `${whole.toString()}.${decimals}`;
+  return `${whole}.${decimals}`;
 }
 
 /**
