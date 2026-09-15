@@ -8,7 +8,7 @@ import {
   WEEKLY_PLAN_DAYS,
   getEntitlements,
 } from '@/lib/membership';
-import { paymentBillerId } from '@/lib/billing';
+import { paymentPromptPayTarget, type PromptPayTarget } from '@/lib/billing';
 import { verifySlipWithAms } from '@/lib/ams-gateway';
 
 export const runtime = 'nodejs';
@@ -30,6 +30,20 @@ type OrderRow = {
   expires_at: Date;
 };
 
+type RawReceiver = {
+  account?: {
+    name?: {
+      th?: string;
+      en?: string;
+    };
+    proxy?: {
+      type?: string;
+      account?: string;
+    };
+  };
+  merchantId?: string;
+};
+
 function numericEqual(a: unknown, b: unknown) {
   const left = Number(a);
   const right = Number(b);
@@ -44,8 +58,142 @@ function safeDate(value: unknown) {
 
 function rejectedOrderStatus(code: string) {
   if (code === 'DUPLICATE_SLIP') return 'duplicate';
-  if (code === 'PAYMENT_DATA_MISMATCH' || code === 'REFERENCE_MISMATCH' || code === 'DUPLICATE_STATUS_MISSING') return 'manual_review';
+  if (
+    code === 'PAYMENT_DATA_MISMATCH' ||
+    code === 'DUPLICATE_STATUS_MISSING' ||
+    code === 'RECEIVER_DATA_MISSING' ||
+    code === 'RECEIVER_MISMATCH' ||
+    code === 'RECEIVER_NAME_MISMATCH'
+  ) {
+    return 'manual_review';
+  }
   return 'verification_failed';
+}
+
+function normalizeProxyType(value: unknown) {
+  return typeof value === 'string'
+    ? value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+    : '';
+}
+
+function normalizeProxyAccount(value: unknown) {
+  return typeof value === 'string'
+    ? value.trim().toUpperCase().replace(/[\s-]/g, '')
+    : '';
+}
+
+function normalizeReceiverName(value: unknown) {
+  if (typeof value !== 'string') return '';
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase('th-TH')
+    .replace(/[.,]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function maskedValueMatches(actualMasked: string, expected: string) {
+  const actual = normalizeProxyAccount(actualMasked);
+  const candidate = normalizeProxyAccount(expected);
+  if (!actual || !candidate) return false;
+
+  if (actual.length === candidate.length) {
+    for (let i = 0; i < actual.length; i += 1) {
+      const char = actual[i];
+      if (char === 'X' || char === '*' || char === '?') continue;
+      if (char !== candidate[i]) return false;
+    }
+    return true;
+  }
+
+  // Some providers return only a masked suffix rather than a fixed-width proxy.
+  // Require at least the final 4 visible characters to match to avoid weak matches.
+  const suffix = actual.match(/([0-9A-Z]{4,})$/)?.[1] ?? '';
+  return suffix.length >= 4 && candidate.endsWith(suffix);
+}
+
+function expectedProxyTypes(target: PromptPayTarget) {
+  return target.type === 'national_id'
+    ? new Set(['NATID'])
+    : new Set(['MSISDN', 'MOBILE', 'PHONE']);
+}
+
+function expectedProxyAccounts(target: PromptPayTarget) {
+  if (target.type === 'national_id') return [target.id];
+  const countryPhone = `66${target.id.slice(1)}`;
+  return [target.id, countryPhone, `00${countryPhone}`];
+}
+
+function configuredReceiverNameMatches(receiver: RawReceiver) {
+  const expectedTh = normalizeReceiverName(process.env.MCDA_PAYMENT_RECEIVER_NAME_TH ?? '');
+  const expectedEn = normalizeReceiverName(process.env.MCDA_PAYMENT_RECEIVER_NAME_EN ?? '');
+  if (!expectedTh && !expectedEn) return true;
+
+  const actualTh = normalizeReceiverName(receiver.account?.name?.th);
+  const actualEn = normalizeReceiverName(receiver.account?.name?.en);
+
+  const comparable = (expected: string, actual: string) => {
+    if (!expected) return true;
+    if (!actual || Math.min(expected.length, actual.length) < 4) return false;
+    return actual.startsWith(expected) || expected.startsWith(actual);
+  };
+
+  return comparable(expectedTh, actualTh) && comparable(expectedEn, actualEn);
+}
+
+function verifyReceiver(receiver: RawReceiver | undefined) {
+  const target = paymentPromptPayTarget();
+  if (!target) {
+    return {
+      ok: false as const,
+      code: 'RECEIVER_CONFIG_MISSING',
+      message: 'ระบบยังไม่ได้ตั้งค่าบัญชี PromptPay ผู้รับเงินสำหรับตรวจสอบสลิป',
+      status: 500,
+    };
+  }
+
+  const proxy = receiver?.account?.proxy;
+  if (!receiver?.account || !proxy?.type || !proxy?.account) {
+    return {
+      ok: false as const,
+      code: 'RECEIVER_DATA_MISSING',
+      message: 'สลิปไม่มีข้อมูลบัญชีผู้รับที่เพียงพอ จึงไม่สามารถเปิด Premium อัตโนมัติได้',
+      status: 422,
+    };
+  }
+
+  const actualType = normalizeProxyType(proxy.type);
+  if (!expectedProxyTypes(target).has(actualType)) {
+    return {
+      ok: false as const,
+      code: 'RECEIVER_MISMATCH',
+      message: 'ประเภทบัญชีผู้รับในสลิปไม่ตรงกับบัญชี PromptPay ของระบบ',
+      status: 422,
+    };
+  }
+
+  const accountMatched = expectedProxyAccounts(target).some((expected) =>
+    maskedValueMatches(proxy.account ?? '', expected),
+  );
+  if (!accountMatched) {
+    return {
+      ok: false as const,
+      code: 'RECEIVER_MISMATCH',
+      message: 'บัญชีผู้รับในสลิปไม่ตรงกับบัญชี PromptPay ของระบบ',
+      status: 422,
+    };
+  }
+
+  if (!configuredReceiverNameMatches(receiver)) {
+    return {
+      ok: false as const,
+      code: 'RECEIVER_NAME_MISMATCH',
+      message: 'ชื่อบัญชีผู้รับในสลิปไม่ตรงกับชื่อผู้รับเงินที่ระบบกำหนด',
+      status: 422,
+    };
+  }
+
+  return { ok: true as const };
 }
 
 export async function POST(
@@ -191,19 +339,11 @@ export async function POST(
     providerResponse?.data?.isAmountMatched !== false;
   const currencyMatched = !normalized.currency || normalized.currency === order.currency;
   const normalizedVerified = normalized.status === 'verified';
-
-  const referencesRequired = Boolean(paymentBillerId() && order.ref1 && order.ref2);
-  const refsMatched =
-    !referencesRequired ||
-    (
-      typeof rawSlip?.ref1 === 'string' &&
-      typeof rawSlip?.ref2 === 'string' &&
-      rawSlip.ref1.trim() === order.ref1 &&
-      rawSlip.ref2.trim() === order.ref2
-    );
+  const receiverCheck = verifyReceiver(rawSlip?.receiver);
 
   let rejectionCode = '';
   let rejectionMessage = '';
+  let rejectionHttpStatus = 422;
   if (!providerSuccess || !normalizedVerified) {
     rejectionCode = 'SLIP_NOT_VERIFIED';
     rejectionMessage = 'ผู้ให้บริการยังไม่ยืนยันสลิปนี้';
@@ -215,9 +355,10 @@ export async function POST(
   } else if (!amountMatched || !currencyMatched) {
     rejectionCode = 'PAYMENT_DATA_MISMATCH';
     rejectionMessage = `ยอดเงินหรือสกุลเงินไม่ตรงกับรายการ ${order.amount} บาท`;
-  } else if (!refsMatched) {
-    rejectionCode = 'REFERENCE_MISMATCH';
-    rejectionMessage = 'ref1/ref2 ในสลิปไม่ตรงกับรายการชำระเงินนี้';
+  } else if (!receiverCheck.ok) {
+    rejectionCode = receiverCheck.code;
+    rejectionMessage = receiverCheck.message;
+    rejectionHttpStatus = receiverCheck.status;
   } else if (!providerReference) {
     rejectionCode = 'PROVIDER_REFERENCE_MISSING';
     rejectionMessage = 'ไม่พบเลขอ้างอิงธุรกรรมจากผู้ให้บริการ';
@@ -247,7 +388,7 @@ export async function POST(
 
     return NextResponse.json(
       { error: { code: rejectionCode, message: rejectionMessage } },
-      { status: 422 },
+      { status: rejectionHttpStatus },
     );
   }
 
