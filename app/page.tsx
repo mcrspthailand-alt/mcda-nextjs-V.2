@@ -1,11 +1,11 @@
-import McdaApp from '@/components/McdaApp';
 import AuthUserMenu from '@/components/AuthUserMenu';
+import MainTabs from '@/components/MainTabs';
 
 export default function HomePage() {
   return (
     <>
       <AuthUserMenu />
-      <McdaApp />
+      <MainTabs />
     </>
   );
 }
