@@ -12,6 +12,19 @@ function gatewayApiKey() {
   return apiKey;
 }
 
+function paymentDebugEnabled() {
+  return /^(1|true|yes|on)$/i.test((process.env.MCDA_PAYMENT_DEBUG_LOG ?? '').trim());
+}
+
+function paymentDebugLog(label: string, payload: unknown) {
+  if (!paymentDebugEnabled()) return;
+  try {
+    console.log(`[MCDA PAYMENT DEBUG] ${label}\n${JSON.stringify(payload, null, 2)}`);
+  } catch {
+    console.log(`[MCDA PAYMENT DEBUG] ${label}`, payload);
+  }
+}
+
 export type AmsSlipVerificationResponse = {
   data?: {
     verification_id?: string;
@@ -80,16 +93,50 @@ export async function verifySlipWithAms(input: {
   formData.append('expected_currency', input.expectedCurrency);
 
   const requestId = randomUUID();
-  const response = await fetch(`${gatewayBaseUrl()}/api/v1/slips/verify`, {
+  const endpoint = `${gatewayBaseUrl()}/api/v1/slips/verify`;
+
+  paymentDebugLog('AMS REQUEST', {
     method: 'POST',
+    endpoint,
     headers: {
-      'X-AMS-API-Key': gatewayApiKey(),
+      'X-AMS-API-Key': '[REDACTED]',
       'X-Request-Id': requestId,
       'Idempotency-Key': input.idempotencyKey,
     },
-    body: formData,
-    cache: 'no-store',
+    formData: {
+      image: {
+        name: input.image.name || 'slip.jpg',
+        type: input.image.type,
+        size: input.image.size,
+      },
+      external_reference: input.externalReference,
+      expected_amount: input.expectedAmount,
+      expected_currency: input.expectedCurrency,
+    },
   });
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'X-AMS-API-Key': gatewayApiKey(),
+        'X-Request-Id': requestId,
+        'Idempotency-Key': input.idempotencyKey,
+      },
+      body: formData,
+      cache: 'no-store',
+    });
+  } catch (error) {
+    paymentDebugLog('AMS NETWORK ERROR', {
+      requestId,
+      idempotencyKey: input.idempotencyKey,
+      error: error instanceof Error
+        ? { name: error.name, message: error.message, stack: error.stack }
+        : String(error),
+    });
+    throw error;
+  }
 
   const body = (await response.json().catch(() => ({
     error: {
@@ -97,6 +144,14 @@ export async function verifySlipWithAms(input: {
       message: `AMS Gateway returned HTTP ${response.status} without JSON`,
     },
   }))) as AmsSlipVerificationResponse;
+
+  paymentDebugLog('AMS RESPONSE', {
+    requestId,
+    idempotencyKey: input.idempotencyKey,
+    httpStatus: response.status,
+    ok: response.ok,
+    body,
+  });
 
   return {
     ok: response.ok,
