@@ -48,14 +48,38 @@ Required production environment variables:
 AMS_GATEWAY_BASE_URL=https://ams-gateway.micro-support.com
 AMS_GATEWAY_API_KEY=ams_...
 AMS_SERVICE_CODE=<assigned-service-code>
-MCDA_PROMPTPAY_PHONE=<10-digit-Thai-mobile-number>
+
+# Choose one PromptPay proxy type: phone or national_id
+MCDA_PROMPTPAY_TYPE=national_id
+MCDA_PROMPTPAY_ID=<13-digit-national-id-or-tax-id>
 ```
 
-`MCDA_PROMPTPAY_PHONE` must be the real Thai mobile number registered for the PromptPay receiver. It stays server-side and is used to build a standard Thai PromptPay EMVCo QR payload with the fixed order amount (59.00 THB).
+For a mobile-number PromptPay receiver use:
 
-The current billing flow no longer uses the merchant-specific `|biller-id\rref1\rref2\ramount-minor-unit` QR format. Standard mobile PromptPay QR does not embed `ref1/ref2`; order association and payment acceptance are enforced server-side through the selected payment order, expected amount/currency, AMS verification result, duplicate status, and provider transaction reference uniqueness.
+```env
+MCDA_PROMPTPAY_TYPE=phone
+MCDA_PROMPTPAY_ID=0836777796
+```
 
-See `docs/PROMPTPAY_QR_IMPLEMENTATION.md` for the payload details.
+For a National ID / Tax ID PromptPay receiver use:
+
+```env
+MCDA_PROMPTPAY_TYPE=national_id
+MCDA_PROMPTPAY_ID=1234567890123
+```
+
+`MCDA_PROMPTPAY_ID` is server-side only and must not be exposed through a `NEXT_PUBLIC_*` variable. The billing API returns only a masked PromptPay identifier to the browser.
+
+The standard Thai PromptPay Tag 29 generator supports:
+
+- mobile number via PromptPay sub-tag `01`
+- National ID / Tax ID via PromptPay sub-tag `02`
+
+The fixed order amount (59.00 THB) is encoded in the QR. Standard PromptPay Tag 29 does not embed `ref1/ref2`; order association and payment acceptance are enforced server-side through the selected payment order, expected amount/currency, AMS verification result, duplicate status, and provider transaction reference uniqueness.
+
+Backward-compatible variables `MCDA_PROMPTPAY_PHONE` and `MCDA_PROMPTPAY_NATIONAL_ID` are also accepted, but the preferred configuration is `MCDA_PROMPTPAY_TYPE` + `MCDA_PROMPTPAY_ID`.
+
+See `docs/PROMPTPAY_QR_IMPLEMENTATION.md` for payload details.
 
 ## Local development
 
