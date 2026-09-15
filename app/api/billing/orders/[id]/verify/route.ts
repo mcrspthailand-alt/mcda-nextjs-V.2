@@ -214,7 +214,7 @@ export async function POST(
       : 'ผลตรวจสลิปไม่มีสถานะ duplicate ที่ยืนยันได้ จึงยังไม่เปิดสิทธิ์อัตโนมัติ';
   } else if (!amountMatched || !currencyMatched) {
     rejectionCode = 'PAYMENT_DATA_MISMATCH';
-    rejectionMessage = 'ยอดเงินหรือสกุลเงินไม่ตรงกับรายการ 59 บาท';
+    rejectionMessage = `ยอดเงินหรือสกุลเงินไม่ตรงกับรายการ ${order.amount} บาท`;
   } else if (!refsMatched) {
     rejectionCode = 'REFERENCE_MISMATCH';
     rejectionMessage = 'ref1/ref2 ในสลิปไม่ตรงกับรายการชำระเงินนี้';
