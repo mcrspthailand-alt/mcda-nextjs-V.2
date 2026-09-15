@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -14,6 +15,10 @@ const ENGINE_PARTS = [
   'part-06.txt',
 ];
 
+// SHA-256 of the known-good gzip regenerated from
+// MCDA_MultiMethod_DynamicSelectedModelPDF_v26.html.
+const EXPECTED_GZIP_SHA256 = 'f35840c13cdf13f486f0a11050e925ecde38c70bf95d342803dbb3c3713cbe3a';
+
 let cachedEngineSource: string | null = null;
 
 async function getEngineSource() {
@@ -29,8 +34,20 @@ async function getEngineSource() {
     }),
   );
 
-  const compressed = Buffer.from(chunks.join(''), 'base64');
+  const base64 = chunks.join('');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64) || base64.length % 4 !== 0) {
+    throw new Error('MCDA engine payload is not valid base64');
+  }
+
+  const compressed = Buffer.from(base64, 'base64');
   if (!compressed.length) throw new Error('MCDA engine payload is empty');
+
+  const gzipSha256 = createHash('sha256').update(compressed).digest('hex');
+  if (gzipSha256 !== EXPECTED_GZIP_SHA256) {
+    throw new Error(
+      `MCDA engine integrity check failed: expected ${EXPECTED_GZIP_SHA256}, received ${gzipSha256}`,
+    );
+  }
 
   const source = gunzipSync(compressed).toString('utf8');
   if (!source.trim()) throw new Error('MCDA engine decompressed to an empty script');
@@ -49,6 +66,7 @@ export async function GET() {
         'Content-Type': 'application/javascript; charset=utf-8',
         'Cache-Control': 'public, max-age=31536000, immutable',
         'X-Content-Type-Options': 'nosniff',
+        'X-MCDA-Engine-Version': '26',
       },
     });
   } catch (error) {
