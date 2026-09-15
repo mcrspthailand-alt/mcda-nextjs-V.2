@@ -58,7 +58,7 @@ MCDA_PROMPTPAY_TYPE=national_id
 MCDA_PROMPTPAY_ID=<13-digit-national-id-or-tax-id>
 ```
 
-`MCDA_PREMIUM_WEEKLY_PRICE_THB` accepts a positive THB amount with up to 2 decimal places, for example `49`, `59.00`, or `79.50`. Changing it affects **new payment orders** after the service is redeployed/restarted. Existing orders keep the amount stored when they were created, so their QR and slip verification continue to use the original order amount.
+`MCDA_PREMIUM_WEEKLY_PRICE_THB` accepts a positive THB amount with up to 2 decimal places, for example `1.00`, `49`, `59.00`, or `79.50`. After the service is redeployed/restarted, new payment orders use the current environment price. Any still-unpaid, non-expired order whose amount no longer matches the configured price is retired as `superseded` and is not reused; the next payment action creates a fresh order and QR with the current price.
 
 For a mobile-number PromptPay receiver use:
 
