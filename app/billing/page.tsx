@@ -56,6 +56,16 @@ function formatThaiDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatThb(value: string | null | undefined, forceTwoDecimals = false) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return value || '-';
+  const hasSatang = Math.abs(amount - Math.trunc(amount)) > 0.000001;
+  return new Intl.NumberFormat('th-TH', {
+    minimumFractionDigits: forceTwoDecimals || hasSatang ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 export default function BillingPage() {
   const [state, setState] = useState<BillingState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,6 +87,11 @@ export default function BillingPage() {
   const promptPayKind = state?.promptPayType === 'national_id'
     ? 'เลขบัตรประชาชน / เลขประจำตัวผู้เสียภาษี'
     : 'เบอร์มือถือ';
+  const planPrice = state?.plan.priceThb ?? state?.entitlements.weeklyPriceThb ?? '59.00';
+  const planPriceLabel = formatThb(planPrice);
+  const planDays = state?.plan.durationDays ?? 7;
+  const orderAmount = state?.order?.amount ?? planPrice;
+  const orderAmountMoney = formatThb(orderAmount, true);
 
   async function loadBilling() {
     setLoading(true);
@@ -108,7 +123,7 @@ export default function BillingPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error?.message || 'สร้างรายการไม่สำเร็จ');
       setState(data);
-      setMessage('สร้างรายการชำระเงิน 59 บาทแล้ว');
+      setMessage(`สร้างรายการชำระเงิน ${formatThb(data?.order?.amount ?? data?.plan?.priceThb)} บาทแล้ว`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'สร้างรายการไม่สำเร็จ');
     } finally {
@@ -155,7 +170,7 @@ export default function BillingPage() {
         <div>
           <div style={styles.eyebrow}>MCDA MEMBERSHIP</div>
           <h1 style={styles.title}>สมาชิกและแพ็กเกจใช้งาน</h1>
-          <p style={styles.subtitle}>Free สำหรับงานพื้นฐาน หรือ Premium 59 บาท / 7 วัน เพื่อปลดล็อกทุกโมเดลและไม่จำกัดจำนวนการวิเคราะห์</p>
+          <p style={styles.subtitle}>Free สำหรับงานพื้นฐาน หรือ Premium {planPriceLabel} บาท / {planDays} วัน เพื่อปลดล็อกทุกโมเดลและไม่จำกัดจำนวนการวิเคราะห์</p>
         </div>
         <Link href="/" style={styles.backLink}>← กลับหน้าวิเคราะห์</Link>
       </div>
@@ -190,8 +205,8 @@ export default function BillingPage() {
               <h2 style={styles.planTitle}>MCDA Premium Weekly</h2>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <strong style={styles.price}>59 บาท</strong>
-              <div style={styles.muted}>7 วันนับจากเวลาชำระสำเร็จ</div>
+              <strong style={styles.price}>{planPriceLabel} บาท</strong>
+              <div style={styles.muted}>{planDays} วันนับจากเวลาชำระสำเร็จ</div>
             </div>
           </div>
           <ul style={styles.list}>
@@ -205,7 +220,7 @@ export default function BillingPage() {
             </div>
           ) : (
             <button type="button" onClick={createOrder} disabled={creating} style={styles.primaryButton}>
-              {creating ? 'กำลังสร้างรายการ…' : 'ชำระ 59 บาท / เปิด Premium 7 วัน'}
+              {creating ? 'กำลังสร้างรายการ…' : `ชำระ ${planPriceLabel} บาท / เปิด Premium ${planDays} วัน`}
             </button>
           )}
         </article>
@@ -216,7 +231,7 @@ export default function BillingPage() {
           <div style={styles.paymentHeading}>
             <div>
               <span style={styles.premiumBadge}>PAYMENT</span>
-              <h2 style={styles.planTitle}>ชำระเงิน 59.00 THB</h2>
+              <h2 style={styles.planTitle}>ชำระเงิน {orderAmountMoney} THB</h2>
               <div style={styles.muted}>Order: {state.order.externalReference}</div>
             </div>
             <div style={styles.orderStatus}>{state.order.status}</div>
@@ -231,15 +246,15 @@ export default function BillingPage() {
           {state.qrDataUrl && orderPayable ? (
             <div style={styles.paymentGrid}>
               <div style={styles.qrWrap}>
-                <img src={state.qrDataUrl} alt="Standard Thai PromptPay QR สำหรับชำระ MCDA Premium 59 บาท" style={styles.qr} />
-                <strong>59.00 บาท</strong>
+                <img src={state.qrDataUrl} alt={`Standard Thai PromptPay QR สำหรับชำระ MCDA Premium ${orderAmountMoney} บาท`} style={styles.qr} />
+                <strong>{orderAmountMoney} บาท</strong>
                 <span style={styles.muted}>Thai PromptPay · {state.promptPayAccount || 'บัญชีรับเงินที่ตั้งค่าไว้'}</span>
               </div>
               <div>
                 <h3 style={{ marginTop: 0 }}>ขั้นตอนชำระเงิน</h3>
                 <ol style={styles.list}>
                   <li>สแกน Standard Thai PromptPay QR นี้ด้วย Mobile Banking</li>
-                  <li>ตรวจสอบชื่อผู้รับและยอด 59.00 บาทก่อนยืนยัน</li>
+                  <li>ตรวจสอบชื่อผู้รับและยอด {orderAmountMoney} บาทก่อนยืนยัน</li>
                   <li>บันทึกสลิป แล้วอัปโหลดด้านล่าง</li>
                   <li>ระบบจะส่งสลิปไปตรวจผ่าน AMS Payment Gateway และเปิด Premium หลังผ่านเงื่อนไข</li>
                 </ol>
@@ -282,7 +297,7 @@ export default function BillingPage() {
       ) : null}
 
       <section style={styles.note}>
-        QR นี้เป็น Standard Thai PromptPay Tag 29 รองรับทั้งเบอร์มือถือและเลขบัตรประชาชน/เลขประจำตัวผู้เสียภาษี และฝังยอด 59.00 บาทโดยตรง การยืนยันการชำระเงินยังทำจากข้อมูลฝั่ง Server เท่านั้น และ Premium จะเริ่มนับ 7 วันจากเวลาที่การชำระเงินได้รับการยืนยันสำเร็จ
+        QR นี้เป็น Standard Thai PromptPay Tag 29 รองรับทั้งเบอร์มือถือและเลขบัตรประชาชน/เลขประจำตัวผู้เสียภาษี และฝังยอดตามราคาของ Order ({orderAmountMoney} บาท) โดยตรง การยืนยันการชำระเงินยังทำจากข้อมูลฝั่ง Server เท่านั้น และ Premium จะเริ่มนับ {planDays} วันจากเวลาที่การชำระเงินได้รับการยืนยันสำเร็จ
       </section>
     </main>
   );
