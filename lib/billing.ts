@@ -228,10 +228,12 @@ export async function findRecentPayableOrder(userId: string) {
       WHERE user_id = $1
         AND status = 'awaiting_payment'
         AND expires_at > NOW()
+        AND currency = 'THB'
+        AND amount = $2::numeric
       ORDER BY created_at DESC
       LIMIT 1
     `,
-    [userId],
+    [userId, WEEKLY_PLAN_PRICE_THB],
   );
   return result.rows[0] ?? null;
 }
@@ -247,10 +249,12 @@ export async function findLatestPaymentOrder(userId: string) {
         provider_reference, paid_at, expires_at, created_at
       FROM payment_orders
       WHERE user_id = $1
+        AND currency = 'THB'
+        AND amount = $2::numeric
       ORDER BY created_at DESC
       LIMIT 1
     `,
-    [userId],
+    [userId, WEEKLY_PLAN_PRICE_THB],
   );
   return result.rows[0] ?? null;
 }
@@ -258,6 +262,22 @@ export async function findLatestPaymentOrder(userId: string) {
 export async function createWeeklyPaymentOrder(userId: string) {
   await ensureMembershipSchema();
   const pool = getPool();
+
+  // A payable QR must always reflect the current configured package price.
+  // When the admin changes MCDA_PREMIUM_WEEKLY_PRICE_THB, retire any still-payable
+  // order created with the previous amount so it cannot be reused accidentally.
+  await pool.query(
+    `
+      UPDATE payment_orders
+      SET status = 'superseded',
+          updated_at = NOW()
+      WHERE user_id = $1
+        AND status = 'awaiting_payment'
+        AND expires_at > NOW()
+        AND (currency <> 'THB' OR amount <> $2::numeric)
+    `,
+    [userId, WEEKLY_PLAN_PRICE_THB],
+  );
 
   const existing = await findRecentPayableOrder(userId);
   if (existing) return existing;
