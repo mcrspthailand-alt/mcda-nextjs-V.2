@@ -24,6 +24,17 @@ export type PaymentOrder = {
   created_at: Date;
 };
 
+export type PromptPayProxyType = 'phone' | 'national_id';
+
+export type PromptPayTarget = {
+  type: PromptPayProxyType;
+  id: string;
+  masked: string;
+  label: string;
+  merchantAccountSubTag: '01' | '02';
+  merchantAccountValue: string;
+};
+
 function compactId(prefix: string, id: string) {
   return `${prefix}${id.replace(/-/g, '').slice(0, 14).toUpperCase()}`;
 }
@@ -55,37 +66,127 @@ function normalizeThbAmount(value: string) {
   return `${whole}.${decimals}`;
 }
 
+function normalizeProxyValue(value: string) {
+  return value.trim().replace(/[\s-]/g, '');
+}
+
+function parsePromptPayType(value: string): PromptPayProxyType | null {
+  const normalized = value.trim().toLowerCase().replace(/-/g, '_');
+  if (normalized === 'phone' || normalized === 'mobile') return 'phone';
+  if (
+    normalized === 'national_id' ||
+    normalized === 'nationalid' ||
+    normalized === 'citizen_id' ||
+    normalized === 'id_card' ||
+    normalized === 'tax_id'
+  ) {
+    return 'national_id';
+  }
+  return null;
+}
+
+/**
+ * Server-side PromptPay receiver configuration.
+ *
+ * Preferred configuration:
+ *   MCDA_PROMPTPAY_TYPE=phone | national_id
+ *   MCDA_PROMPTPAY_ID=<receiver proxy>
+ *
+ * Backward-compatible fallbacks are also accepted:
+ *   MCDA_PROMPTPAY_PHONE=<10-digit Thai mobile>
+ *   MCDA_PROMPTPAY_NATIONAL_ID=<13-digit National ID / Tax ID>
+ */
+export function paymentPromptPayTarget(): PromptPayTarget | null {
+  const explicitType = parsePromptPayType(process.env.MCDA_PROMPTPAY_TYPE ?? '');
+  const genericId = normalizeProxyValue(process.env.MCDA_PROMPTPAY_ID ?? '');
+  const legacyPhone = normalizeProxyValue(process.env.MCDA_PROMPTPAY_PHONE ?? '');
+  const legacyNationalId = normalizeProxyValue(process.env.MCDA_PROMPTPAY_NATIONAL_ID ?? '');
+
+  let type = explicitType;
+  let value = genericId;
+
+  if (!type && value) {
+    if (/^0\d{9}$/.test(value)) type = 'phone';
+    else if (/^\d{13}$/.test(value)) type = 'national_id';
+  }
+
+  if (!type) {
+    if (legacyNationalId) {
+      type = 'national_id';
+      value = legacyNationalId;
+    } else if (legacyPhone) {
+      type = 'phone';
+      value = legacyPhone;
+    }
+  } else if (!value) {
+    value = type === 'phone' ? legacyPhone : legacyNationalId;
+  }
+
+  if (type === 'phone') {
+    if (!/^0\d{9}$/.test(value)) return null;
+    const normalizedPhone = `66${value.slice(1)}`;
+    return {
+      type,
+      id: value,
+      masked: `${value.slice(0, 3)}****${value.slice(-3)}`,
+      label: 'เบอร์มือถือ',
+      merchantAccountSubTag: '01',
+      merchantAccountValue: `00${normalizedPhone}`,
+    };
+  }
+
+  if (type === 'national_id') {
+    if (!/^\d{13}$/.test(value)) return null;
+    return {
+      type,
+      id: value,
+      masked: `${value.slice(0, 1)}-****-*****-**-${value.slice(-1)}`,
+      label: 'เลขบัตรประชาชน / เลขประจำตัวผู้เสียภาษี',
+      merchantAccountSubTag: '02',
+      merchantAccountValue: value,
+    };
+  }
+
+  return null;
+}
+
 export function paymentPromptPayPhone() {
-  const phone = (process.env.MCDA_PROMPTPAY_PHONE ?? '').trim();
-  return /^0\d{9}$/.test(phone) ? phone : null;
+  const target = paymentPromptPayTarget();
+  return target?.type === 'phone' ? target.id : null;
 }
 
 export function maskedPromptPayPhone() {
-  const phone = paymentPromptPayPhone();
-  if (!phone) return null;
-  return `${phone.slice(0, 3)}****${phone.slice(-3)}`;
+  const target = paymentPromptPayTarget();
+  return target?.type === 'phone' ? target.masked : null;
+}
+
+export function maskedPromptPayAccount() {
+  return paymentPromptPayTarget()?.masked ?? null;
 }
 
 /**
  * Legacy compatibility only.
  * Merchant-specific QR is intentionally disabled. Returning an empty value keeps
- * the existing verifier from requiring ref1/ref2 for the standard mobile PromptPay QR.
+ * the existing verifier from requiring ref1/ref2 for standard PromptPay Tag 29 QR.
  */
 export function paymentBillerId() {
   return '';
 }
 
-export function buildPromptPayMobilePayload(order: Pick<PaymentOrder, 'amount'>) {
-  const phone = paymentPromptPayPhone();
-  if (!phone) return null;
+/**
+ * Build Standard Thai PromptPay Tag 29 payload.
+ * Bank of Thailand reserves sub-tag 01 for mobile and sub-tag 02 for National/Tax ID.
+ */
+export function buildPromptPayPayload(order: Pick<PaymentOrder, 'amount'>) {
+  const target = paymentPromptPayTarget();
+  if (!target) return null;
 
-  const normalizedPhone = `66${phone.slice(1)}`;
   const merchantAccount =
     tlv('00', 'A000000677010111') +
-    tlv('01', `00${normalizedPhone}`);
+    tlv(target.merchantAccountSubTag, target.merchantAccountValue);
 
-  // The AMS integration guide's asserted example uses point-of-initiation value 11.
-  // Keep that exact contract so the implementation reproduces the documented sample.
+  // Keep the existing client-guide contract for point-of-initiation while changing
+  // only the PromptPay proxy sub-tag/value according to the configured receiver type.
   const amount = normalizeThbAmount(order.amount);
   const payload =
     tlv('00', '01') +
@@ -98,6 +199,9 @@ export function buildPromptPayMobilePayload(order: Pick<PaymentOrder, 'amount'>)
   const crcInput = `${payload}6304`;
   return `${crcInput}${crc16Ccitt(crcInput)}`;
 }
+
+// Backward-compatible export for code compiled against the previous mobile-only helper.
+export const buildPromptPayMobilePayload = buildPromptPayPayload;
 
 export async function findRecentPayableOrder(userId: string) {
   await ensureMembershipSchema();
@@ -150,7 +254,7 @@ export async function createWeeklyPaymentOrder(userId: string) {
   const externalReference = compactId('MCDA', id);
   const paymentReference = compactId('PAY', randomUUID());
 
-  // Standard mobile PromptPay QR does not carry ref1/ref2.
+  // Standard PromptPay Tag 29 (phone or National/Tax ID) does not carry ref1/ref2.
   const ref1 = null;
   const ref2 = null;
 
