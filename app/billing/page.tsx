@@ -45,6 +45,12 @@ type BillingState = {
   };
 };
 
+type VerificationFeedback = {
+  kind: 'success' | 'error';
+  text: string;
+  code?: string;
+} | null;
+
 const freeModels = ['TOPSIS', 'PROMETHEE II', 'MOORA', 'ELECTRE I'];
 
 function formatThaiDate(value: string | null) {
@@ -66,6 +72,34 @@ function formatThb(value: string | null | undefined, forceTwoDecimals = false) {
   }).format(amount);
 }
 
+function verificationErrorMessage(
+  code: string | undefined,
+  fallback: string | undefined,
+  orderAmount: string,
+) {
+  const messages: Record<string, string> = {
+    ORDER_NOT_FOUND: 'ไม่พบรายการชำระเงินนี้ กรุณาสร้างรายการชำระเงินใหม่',
+    ORDER_NOT_PAYABLE: 'รายการชำระเงินนี้หมดอายุหรือถูกยกเลิกแล้ว กรุณาสร้างรายการชำระเงินใหม่',
+    INVALID_SLIP: 'ไฟล์สลิปไม่ถูกต้อง กรุณาใช้ไฟล์ JPEG, PNG, GIF หรือ WebP ขนาดไม่เกิน 4 MB',
+    SLIP_NOT_VERIFIED: 'ไม่สามารถยืนยันสลิปนี้ได้ กรุณาตรวจสอบว่าสลิปถูกต้องและลองอีกครั้ง',
+    DUPLICATE_SLIP: 'สลิปนี้ถูกใช้งานแล้ว หรือถูกผูกกับรายการชำระเงินอื่น จึงยังไม่สามารถเปิด Premium ได้',
+    DUPLICATE_STATUS_MISSING: 'ไม่สามารถยืนยันสถานะสลิปซ้ำได้อย่างปลอดภัย กรุณาลองใหม่หรือติดต่อผู้ดูแล',
+    PAYMENT_DATA_MISMATCH: `ยอดเงินหรือสกุลเงินในสลิปไม่ตรงกับรายการ ${formatThb(orderAmount, true)} บาท`,
+    RECEIVER_CONFIG_MISSING: 'ระบบยังไม่ได้ตั้งค่าบัญชีผู้รับเงินสำหรับตรวจสอบ กรุณาติดต่อผู้ดูแล',
+    RECEIVER_DATA_MISSING: 'สลิปไม่มีข้อมูลบัญชีผู้รับเพียงพอ จึงยังไม่สามารถยืนยันการชำระเงินได้',
+    RECEIVER_MISMATCH: 'บัญชีผู้รับเงินในสลิปไม่ตรงกับบัญชี PromptPay ของระบบ กรุณาตรวจสอบว่าชำระเข้าบัญชีที่ถูกต้อง',
+    RECEIVER_NAME_MISMATCH: 'ชื่อบัญชีผู้รับเงินในสลิปไม่ตรงกับผู้รับเงินของระบบ กรุณาตรวจสอบสลิปอีกครั้ง',
+    PROVIDER_REFERENCE_MISSING: 'ไม่พบเลขอ้างอิงธุรกรรมจากผู้ให้บริการ จึงยังไม่สามารถยืนยันการชำระเงินได้',
+    GATEWAY_UNAVAILABLE: 'ระบบตรวจสอบสลิปขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้งในภายหลัง',
+    PAYMENT_ACTIVATION_FAILED: 'ตรวจสอบสลิปผ่านแล้ว แต่ยังไม่สามารถเปิด Premium ได้ กรุณาติดต่อผู้ดูแล',
+    IDEMPOTENCY_CONFLICT: 'เกิดความขัดแย้งในการตรวจสอบสลิป กรุณาเลือกไฟล์สลิปใหม่แล้วลองอีกครั้ง',
+    PROVIDER_UNAVAILABLE: 'ผู้ให้บริการตรวจสลิปยังไม่พร้อม กรุณารอสักครู่แล้วลองใหม่',
+    PROVIDER_RATE_LIMITED: 'มีการตรวจสอบสลิปจำนวนมากในขณะนี้ กรุณารอสักครู่แล้วลองใหม่',
+  };
+
+  return (code && messages[code]) || fallback || 'ตรวจสอบสลิปไม่สำเร็จ กรุณาลองอีกครั้ง';
+}
+
 export default function BillingPage() {
   const [state, setState] = useState<BillingState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,6 +107,7 @@ export default function BillingPage() {
   const [verifying, setVerifying] = useState(false);
   const [slip, setSlip] = useState<File | null>(null);
   const [message, setMessage] = useState('');
+  const [verificationFeedback, setVerificationFeedback] = useState<VerificationFeedback>(null);
 
   const orderPayable = useMemo(
     () =>
@@ -118,6 +153,7 @@ export default function BillingPage() {
   async function createOrder() {
     setCreating(true);
     setMessage('');
+    setVerificationFeedback(null);
     try {
       const response = await fetch('/api/billing/orders', { method: 'POST' });
       const data = await response.json();
@@ -133,12 +169,16 @@ export default function BillingPage() {
 
   async function verifySlip() {
     if (!state?.order || !slip) {
-      setMessage('กรุณาเลือกไฟล์สลิปก่อน');
+      setVerificationFeedback({
+        kind: 'error',
+        text: 'กรุณาเลือกไฟล์สลิปก่อนกดตรวจสอบ',
+        code: 'INVALID_SLIP',
+      });
       return;
     }
 
     setVerifying(true);
-    setMessage('');
+    setVerificationFeedback(null);
     try {
       const formData = new FormData();
       formData.append('image', slip);
@@ -146,15 +186,33 @@ export default function BillingPage() {
         method: 'POST',
         body: formData,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.error?.message || 'ตรวจสอบสลิปไม่สำเร็จ');
+      const data = await response.json().catch(() => ({}));
 
-      setMessage(data?.message || 'ชำระเงินสำเร็จ เปิดใช้งาน Premium แล้ว');
+      if (!response.ok) {
+        const code = typeof data?.error?.code === 'string' ? data.error.code : undefined;
+        const fallback = typeof data?.error?.message === 'string' ? data.error.message : undefined;
+        setVerificationFeedback({
+          kind: 'error',
+          code,
+          text: verificationErrorMessage(code, fallback, state.order.amount),
+        });
+        return;
+      }
+
+      setVerificationFeedback({
+        kind: 'success',
+        text: data?.message || `ชำระเงิน ${formatThb(state.order.amount, true)} บาทสำเร็จ เปิดใช้งาน Premium แล้ว`,
+      });
       setSlip(null);
       await loadBilling();
       window.dispatchEvent(new Event('mcda-entitlements-refresh'));
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'ตรวจสอบสลิปไม่สำเร็จ');
+      setVerificationFeedback({
+        kind: 'error',
+        text: error instanceof Error
+          ? `ไม่สามารถตรวจสอบสลิปได้: ${error.message}`
+          : 'ไม่สามารถตรวจสอบสลิปได้ กรุณาลองอีกครั้ง',
+      });
     } finally {
       setVerifying(false);
     }
@@ -271,12 +329,29 @@ export default function BillingPage() {
 
           {orderPayable ? (
             <div style={styles.uploadBox}>
+              {verificationFeedback ? (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  style={verificationFeedback.kind === 'error' ? styles.verifyError : styles.verifySuccess}
+                >
+                  <strong>{verificationFeedback.kind === 'error' ? 'ตรวจสอบสลิปไม่ผ่าน' : 'ตรวจสอบสลิปสำเร็จ'}</strong>
+                  <div style={{ marginTop: 4 }}>{verificationFeedback.text}</div>
+                  {verificationFeedback.code ? (
+                    <div style={styles.verifyCode}>รหัส: {verificationFeedback.code}</div>
+                  ) : null}
+                </div>
+              ) : null}
+
               <label style={styles.fileLabel}>
                 <span>อัปโหลดสลิป (JPEG / PNG / GIF / WebP ไม่เกิน 4 MB)</span>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/gif,image/webp"
-                  onChange={(event) => setSlip(event.target.files?.[0] ?? null)}
+                  onChange={(event) => {
+                    setSlip(event.target.files?.[0] ?? null);
+                    setVerificationFeedback(null);
+                  }}
                 />
               </label>
               <button
@@ -450,6 +525,30 @@ const styles: Record<string, CSSProperties> = {
     marginTop: 18,
     paddingTop: 18,
     borderTop: '1px solid #edf0f5',
+  },
+  verifyError: {
+    marginBottom: 14,
+    padding: '12px 14px',
+    borderRadius: 10,
+    border: '1px solid #f3b8b8',
+    background: '#fff1f1',
+    color: '#a21a1a',
+    lineHeight: 1.55,
+  },
+  verifySuccess: {
+    marginBottom: 14,
+    padding: '12px 14px',
+    borderRadius: 10,
+    border: '1px solid #a9dfc6',
+    background: '#edf9f3',
+    color: '#176b46',
+    lineHeight: 1.55,
+  },
+  verifyCode: {
+    marginTop: 5,
+    fontSize: 11,
+    opacity: 0.75,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
   },
   fileLabel: {
     display: 'grid',
