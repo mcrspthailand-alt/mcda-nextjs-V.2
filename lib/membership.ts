@@ -26,8 +26,40 @@ export const FREE_MCDA_MODELS = Object.freeze([
 
 export const FREE_DAILY_ANALYSIS_LIMIT = 10;
 export const WEEKLY_PLAN_CODE = 'mcda_weekly_unlimited';
-export const WEEKLY_PLAN_PRICE_THB = '59.00';
 export const WEEKLY_PLAN_DAYS = 7;
+
+const DEFAULT_WEEKLY_PLAN_PRICE_THB = '59.00';
+
+function normalizeWeeklyPlanPrice(value: string | undefined) {
+  const raw = (value ?? '').trim();
+  if (!raw) return DEFAULT_WEEKLY_PLAN_PRICE_THB;
+
+  const match = raw.match(/^(\d+)(?:\.(\d{1,2}))?$/);
+  if (!match) {
+    throw new Error('MCDA_PREMIUM_WEEKLY_PRICE_THB must be a positive THB amount with at most 2 decimal places');
+  }
+
+  const whole = BigInt(match[1]);
+  const decimals = (match[2] ?? '').padEnd(2, '0');
+  const satang = whole * 100n + BigInt(decimals);
+  if (satang <= 0n) {
+    throw new Error('MCDA_PREMIUM_WEEKLY_PRICE_THB must be greater than 0');
+  }
+
+  return `${whole.toString()}.${decimals}`;
+}
+
+/**
+ * Weekly Premium price, resolved server-side from the environment.
+ * Defaults to 59.00 THB when the variable is not configured.
+ */
+export const WEEKLY_PLAN_PRICE_THB = normalizeWeeklyPlanPrice(
+  process.env.MCDA_PREMIUM_WEEKLY_PRICE_THB,
+);
+
+export const WEEKLY_PLAN_PRICE_LABEL = WEEKLY_PLAN_PRICE_THB.endsWith('.00')
+  ? WEEKLY_PLAN_PRICE_THB.slice(0, -3)
+  : WEEKLY_PLAN_PRICE_THB;
 
 export type PlanTier = 'free' | 'premium';
 
@@ -170,7 +202,7 @@ export async function authorizeAnalysis(
         ok: false,
         status: 403,
         code: 'PREMIUM_MODEL_REQUIRED',
-        message: 'โมเดลที่เลือกบางรายการเป็น Premium กรุณาอัปเกรดแพ็กเกจ 59 บาท / 7 วัน',
+        message: `โมเดลที่เลือกบางรายการเป็น Premium กรุณาอัปเกรดแพ็กเกจ ${WEEKLY_PLAN_PRICE_LABEL} บาท / 7 วัน`,
         entitlements,
         lockedModels,
       };
@@ -222,7 +254,7 @@ export async function authorizeAnalysis(
       ok: false,
       status: 429,
       code: 'DAILY_LIMIT_REACHED',
-      message: 'โควตาวิเคราะห์ฟรีครบ 10 ครั้งสำหรับวันนี้แล้ว กรุณากลับมาใหม่พรุ่งนี้หรืออัปเกรด Premium',
+      message: `โควตาวิเคราะห์ฟรีครบ 10 ครั้งสำหรับวันนี้แล้ว กรุณากลับมาใหม่พรุ่งนี้หรืออัปเกรด Premium ${WEEKLY_PLAN_PRICE_LABEL} บาท / 7 วัน`,
       entitlements: {
         ...entitlements,
         usedToday: FREE_DAILY_ANALYSIS_LIMIT,
