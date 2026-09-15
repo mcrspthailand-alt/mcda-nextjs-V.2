@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { getRequestUser } from '@/lib/request-user';
@@ -16,6 +16,14 @@ export const dynamic = 'force-dynamic';
 
 const MAX_SLIP_BYTES = 4 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const RECOVERABLE_ORDER_STATUSES = new Set([
+  'awaiting_payment',
+  'duplicate',
+  'manual_review',
+  'verification_failed',
+  'provider_error',
+  'failed',
+]);
 
 type OrderRow = {
   id: string;
@@ -27,6 +35,8 @@ type OrderRow = {
   amount: string;
   currency: string;
   status: string;
+  provider_reference: string | null;
+  provider_response: unknown;
   expires_at: Date;
 };
 
@@ -54,20 +64,6 @@ function safeDate(value: unknown) {
   if (typeof value !== 'string') return new Date();
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
-}
-
-function rejectedOrderStatus(code: string) {
-  if (code === 'DUPLICATE_SLIP') return 'duplicate';
-  if (
-    code === 'PAYMENT_DATA_MISMATCH' ||
-    code === 'DUPLICATE_STATUS_MISSING' ||
-    code === 'RECEIVER_DATA_MISSING' ||
-    code === 'RECEIVER_MISMATCH' ||
-    code === 'RECEIVER_NAME_MISMATCH'
-  ) {
-    return 'manual_review';
-  }
-  return 'verification_failed';
 }
 
 function normalizeProxyType(value: unknown) {
@@ -196,6 +192,30 @@ function verifyReceiver(receiver: RawReceiver | undefined) {
   return { ok: true as const };
 }
 
+function extractProviderReference(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const root = value as {
+    data?: {
+      rawSlip?: { transRef?: unknown };
+      provider_response?: { data?: { rawSlip?: { transRef?: unknown } } };
+    };
+    error?: { provider_response?: { data?: { rawSlip?: { transRef?: unknown } } } };
+    provider_response?: { data?: { rawSlip?: { transRef?: unknown } } };
+  };
+
+  const candidates = [
+    root.data?.rawSlip?.transRef,
+    root.data?.provider_response?.data?.rawSlip?.transRef,
+    root.error?.provider_response?.data?.rawSlip?.transRef,
+    root.provider_response?.data?.rawSlip?.transRef,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return null;
+}
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -216,7 +236,8 @@ export async function POST(
     `
       SELECT
         id, user_id, external_reference, payment_reference, ref1, ref2,
-        amount::text, currency, status, expires_at
+        amount::text, currency, status, provider_reference, provider_response,
+        expires_at
       FROM payment_orders
       WHERE id = $1 AND user_id = $2
       LIMIT 1
@@ -236,16 +257,32 @@ export async function POST(
     return NextResponse.json({ ok: true, entitlements: await getEntitlements(user.id) });
   }
 
-  if (order.status !== 'awaiting_payment' || new Date(order.expires_at).getTime() <= Date.now()) {
+  const expired = new Date(order.expires_at).getTime() <= Date.now();
+  if (expired || !RECOVERABLE_ORDER_STATUSES.has(order.status)) {
     return NextResponse.json(
       {
         error: {
           code: 'ORDER_NOT_PAYABLE',
-          message: 'รายการนี้ไม่อยู่ในสถานะที่รับชำระได้ กรุณาสร้างรายการใหม่',
+          message: 'รายการนี้หมดอายุหรือถูกยกเลิกแล้ว กรุณาสร้างรายการใหม่',
         },
       },
       { status: 409 },
     );
+  }
+
+  // Older versions changed an order to duplicate/manual_review/verification_failed
+  // after one rejected slip. Restore those still-valid orders so a customer can
+  // submit another slip without creating a new payment order.
+  if (order.status !== 'awaiting_payment') {
+    await pool.query(
+      `
+        UPDATE payment_orders
+        SET status = 'awaiting_payment', updated_at = NOW()
+        WHERE id = $1 AND user_id = $2
+      `,
+      [order.id, user.id],
+    );
+    order.status = 'awaiting_payment';
   }
 
   const formData = await request.formData();
@@ -268,6 +305,12 @@ export async function POST(
     );
   }
 
+  // Idempotency is per order + slip content. The same image retries with the same
+  // AMS key, while a different image for the same order receives a different key.
+  const imageBuffer = Buffer.from(await image.arrayBuffer());
+  const slipHash = createHash('sha256').update(imageBuffer).digest('hex');
+  const idempotencyKey = `${order.id}-slip-${slipHash.slice(0, 32)}`;
+
   let gateway;
   try {
     gateway = await verifySlipWithAms({
@@ -275,7 +318,7 @@ export async function POST(
       externalReference: order.external_reference,
       expectedAmount: order.amount,
       expectedCurrency: 'THB',
-      idempotencyKey: `${order.id}-slip-verification`,
+      idempotencyKey,
     });
   } catch (error) {
     console.error('AMS Gateway request failed', error);
@@ -301,20 +344,18 @@ export async function POST(
       [404, 429, 502, 503, 504].includes(gateway.status) ||
       providerCode === 'SLIP_PENDING' ||
       providerCode === 'PROVIDER_UNAVAILABLE';
+    const errorProviderReference = extractProviderReference(gateway.body.error?.provider_response);
 
     await pool.query(
       `
         UPDATE payment_orders
-        SET status = $2,
+        SET status = 'awaiting_payment',
+            provider_reference = COALESCE($2, provider_reference),
             provider_response = $3::jsonb,
             updated_at = NOW()
         WHERE id = $1
       `,
-      [
-        order.id,
-        retryable ? 'awaiting_payment' : rejectedOrderStatus(providerCode),
-        JSON.stringify(gateway.body),
-      ],
+      [order.id, errorProviderReference, JSON.stringify(gateway.body)],
     );
 
     return NextResponse.json(
@@ -324,7 +365,7 @@ export async function POST(
           message: gateway.body.error?.message ||
             (retryable
               ? 'ผู้ให้บริการยังไม่พร้อม กรุณารอสักครู่แล้วลองตรวจสลิปเดิมอีกครั้ง'
-              : 'ตรวจสอบสลิปไม่สำเร็จ กรุณาสร้างรายการชำระเงินใหม่'),
+              : 'ตรวจสอบสลิปนี้ไม่ผ่าน คุณสามารถอัปโหลดสลิปใหม่ใน Order เดิมได้'),
           retryable,
         },
       },
@@ -334,11 +375,20 @@ export async function POST(
 
   const providerSuccess = providerResponse?.success === true;
   const duplicateFlag = providerResponse?.data?.isDuplicate;
+  const previousProviderReference =
+    order.provider_reference || extractProviderReference(order.provider_response);
+  const sameOrderDuplicateRetry =
+    duplicateFlag === true &&
+    typeof providerReference === 'string' &&
+    Boolean(previousProviderReference) &&
+    previousProviderReference === providerReference;
   const amountMatched =
     numericEqual(normalized.amount, order.amount) &&
     providerResponse?.data?.isAmountMatched !== false;
   const currencyMatched = !normalized.currency || normalized.currency === order.currency;
-  const normalizedVerified = normalized.status === 'verified';
+  const normalizedVerified =
+    normalized.status === 'verified' ||
+    (normalized.status === 'duplicate' && sameOrderDuplicateRetry);
   const receiverCheck = verifyReceiver(rawSlip?.receiver);
 
   let rejectionCode = '';
@@ -347,10 +397,10 @@ export async function POST(
   if (!providerSuccess || !normalizedVerified) {
     rejectionCode = 'SLIP_NOT_VERIFIED';
     rejectionMessage = 'ผู้ให้บริการยังไม่ยืนยันสลิปนี้';
-  } else if (duplicateFlag !== false) {
+  } else if (duplicateFlag !== false && !sameOrderDuplicateRetry) {
     rejectionCode = duplicateFlag === true ? 'DUPLICATE_SLIP' : 'DUPLICATE_STATUS_MISSING';
     rejectionMessage = duplicateFlag === true
-      ? 'สลิปนี้ถูกตรวจพบว่าเป็นสลิปซ้ำ'
+      ? 'สลิปนี้ถูกตรวจพบว่าเป็นสลิปซ้ำและยังไม่เคยผูกกับ Order นี้'
       : 'ผลตรวจสลิปไม่มีสถานะ duplicate ที่ยืนยันได้ จึงยังไม่เปิดสิทธิ์อัตโนมัติ';
   } else if (!amountMatched || !currencyMatched) {
     rejectionCode = 'PAYMENT_DATA_MISMATCH';
@@ -368,17 +418,16 @@ export async function POST(
     await pool.query(
       `
         UPDATE payment_orders
-        SET status = $2,
-            provider = $3,
-            verification_id = $4,
-            provider_reference = COALESCE($5, provider_reference),
-            provider_response = $6::jsonb,
+        SET status = 'awaiting_payment',
+            provider = $2,
+            verification_id = $3,
+            provider_reference = COALESCE($4, provider_reference),
+            provider_response = $5::jsonb,
             updated_at = NOW()
         WHERE id = $1
       `,
       [
         order.id,
-        rejectedOrderStatus(rejectionCode),
         normalized.provider ?? null,
         normalized.verification_id ?? null,
         providerReference,
@@ -399,7 +448,8 @@ export async function POST(
       `
         SELECT
           id, user_id, external_reference, payment_reference, ref1, ref2,
-          amount::text, currency, status, expires_at
+          amount::text, currency, status, provider_reference, provider_response,
+          expires_at
         FROM payment_orders
         WHERE id = $1 AND user_id = $2
         FOR UPDATE
@@ -421,6 +471,14 @@ export async function POST(
       return NextResponse.json({ ok: true, entitlements: await getEntitlements(user.id) });
     }
 
+    if (locked.status !== 'awaiting_payment' || new Date(locked.expires_at).getTime() <= Date.now()) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: { code: 'ORDER_NOT_PAYABLE', message: 'รายการนี้ไม่อยู่ในสถานะที่รับชำระได้' } },
+        { status: 409 },
+      );
+    }
+
     const duplicateReference = await client.query(
       `
         SELECT id
@@ -436,16 +494,17 @@ export async function POST(
       await client.query(
         `
           UPDATE payment_orders
-          SET status = 'duplicate',
-              provider_response = $2::jsonb,
+          SET status = 'awaiting_payment',
+              provider_reference = $2,
+              provider_response = $3::jsonb,
               updated_at = NOW()
           WHERE id = $1
         `,
-        [order.id, JSON.stringify(gateway.body)],
+        [order.id, providerReference, JSON.stringify(gateway.body)],
       );
       await client.query('COMMIT');
       return NextResponse.json(
-        { error: { code: 'DUPLICATE_SLIP', message: 'เลขอ้างอิงสลิปนี้ถูกใช้กับรายการอื่นแล้ว' } },
+        { error: { code: 'DUPLICATE_SLIP', message: 'เลขอ้างอิงสลิปนี้ถูกใช้ชำระ Order อื่นแล้ว กรุณาใช้สลิปอื่น' } },
         { status: 409 },
       );
     }
