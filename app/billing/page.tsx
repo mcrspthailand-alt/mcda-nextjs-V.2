@@ -33,6 +33,8 @@ type BillingState = {
   order: PaymentOrder | null;
   qrDataUrl: string | null;
   paymentConfigured: boolean;
+  paymentMethod: 'promptpay_mobile';
+  promptPayAccount: string | null;
   plan: {
     code: string;
     priceThb: string;
@@ -216,27 +218,29 @@ export default function BillingPage() {
 
           {!state.paymentConfigured ? (
             <div style={styles.warning}>
-              ระบบยังไม่ได้ตั้งค่า <code>MCDA_PAYMENT_BILLER_ID</code> จึงยังสร้าง QR สำหรับชำระเงินจริงไม่ได้ ผู้ดูแลต้องตั้งค่า merchant/biller ID ของบริการนี้ใน Environment ก่อนเปิดรับชำระเงิน
+              ระบบยังไม่ได้ตั้งค่า <code>MCDA_PROMPTPAY_PHONE</code> จึงยังสร้าง Standard Thai PromptPay QR ไม่ได้ ผู้ดูแลต้องตั้งค่าเบอร์มือถือไทย 10 หลักที่ลงทะเบียน PromptPay ไว้ใน Environment ก่อนเปิดรับชำระเงิน
             </div>
           ) : null}
 
           {state.qrDataUrl && orderPayable ? (
             <div style={styles.paymentGrid}>
               <div style={styles.qrWrap}>
-                <img src={state.qrDataUrl} alt="QR สำหรับชำระ MCDA Premium 59 บาท" style={styles.qr} />
+                <img src={state.qrDataUrl} alt="Standard Thai PromptPay QR สำหรับชำระ MCDA Premium 59 บาท" style={styles.qr} />
                 <strong>59.00 บาท</strong>
+                <span style={styles.muted}>Thai PromptPay · {state.promptPayAccount || 'บัญชีรับเงินที่ตั้งค่าไว้'}</span>
               </div>
               <div>
                 <h3 style={{ marginTop: 0 }}>ขั้นตอนชำระเงิน</h3>
                 <ol style={styles.list}>
-                  <li>สแกน QR นี้และชำระยอด 59.00 บาท</li>
-                  <li>ตรวจสอบยอดก่อนยืนยันใน Mobile Banking</li>
+                  <li>สแกน Standard Thai PromptPay QR นี้ด้วย Mobile Banking</li>
+                  <li>ตรวจสอบชื่อผู้รับและยอด 59.00 บาทก่อนยืนยัน</li>
                   <li>บันทึกสลิป แล้วอัปโหลดด้านล่าง</li>
                   <li>ระบบจะส่งสลิปไปตรวจผ่าน AMS Payment Gateway และเปิด Premium หลังผ่านเงื่อนไข</li>
                 </ol>
                 <div style={styles.refBox}>
-                  <div><b>ref1:</b> {state.order.ref1 || '-'}</div>
-                  <div><b>ref2:</b> {state.order.ref2 || '-'}</div>
+                  <div><b>ช่องทาง:</b> Standard Thai PromptPay QR</div>
+                  <div><b>PromptPay:</b> {state.promptPayAccount || '-'}</div>
+                  <div><b>Order reference:</b> {state.order.externalReference}</div>
                   <div><b>รายการหมดอายุ:</b> {formatThaiDate(state.order.expiresAt)}</div>
                 </div>
               </div>
@@ -271,7 +275,7 @@ export default function BillingPage() {
       ) : null}
 
       <section style={styles.note}>
-        การชำระเงินจะถูกยืนยันจากข้อมูลฝั่ง Server เท่านั้น ระบบไม่เชื่อยอดเงินหรือเลข Order ที่ส่งจาก Browser โดยตรง และ Premium จะเริ่มนับ 7 วันจากเวลาที่การชำระเงินได้รับการยืนยันสำเร็จ
+        QR นี้เป็น Standard Thai PromptPay สำหรับเบอร์มือถือและฝังยอด 59.00 บาทโดยตรง การยืนยันการชำระเงินยังทำจากข้อมูลฝั่ง Server เท่านั้น และ Premium จะเริ่มนับ 7 วันจากเวลาที่การชำระเงินได้รับการยืนยันสำเร็จ
       </section>
     </main>
   );
