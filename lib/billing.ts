@@ -28,20 +28,75 @@ function compactId(prefix: string, id: string) {
   return `${prefix}${id.replace(/-/g, '').slice(0, 14).toUpperCase()}`;
 }
 
-export function paymentBillerId() {
-  return (process.env.MCDA_PAYMENT_BILLER_ID ?? '').trim();
+function tlv(tag: string, value: string) {
+  return `${tag}${value.length.toString().padStart(2, '0')}${value}`;
 }
 
-export function buildMerchantQrPayload(order: Pick<PaymentOrder, 'ref1' | 'ref2' | 'amount'>) {
-  const billerId = paymentBillerId();
-  if (!billerId || !order.ref1 || !order.ref2) return null;
-
-  const amountMinor = Math.round(Number(order.amount) * 100);
-  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
-    throw new Error('Invalid payment amount');
+function crc16Ccitt(value: string) {
+  let crc = 0xffff;
+  const bytes = Buffer.from(value, 'ascii');
+  for (const byte of bytes) {
+    crc ^= byte << 8;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+    }
   }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
 
-  return `|${billerId}\r${order.ref1}\r${order.ref2}\r${amountMinor}`;
+function normalizeThbAmount(value: string) {
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d+)(?:\.(\d{1,2}))?$/);
+  if (!match) throw new Error('Invalid THB payment amount');
+
+  const whole = BigInt(match[1]).toString();
+  const decimals = (match[2] ?? '').padEnd(2, '0');
+  if (whole === '0' && decimals === '00') throw new Error('Payment amount must be greater than zero');
+  return `${whole}.${decimals}`;
+}
+
+export function paymentPromptPayPhone() {
+  const phone = (process.env.MCDA_PROMPTPAY_PHONE ?? '').trim();
+  return /^0\d{9}$/.test(phone) ? phone : null;
+}
+
+export function maskedPromptPayPhone() {
+  const phone = paymentPromptPayPhone();
+  if (!phone) return null;
+  return `${phone.slice(0, 3)}****${phone.slice(-3)}`;
+}
+
+/**
+ * Legacy compatibility only.
+ * Merchant-specific QR is intentionally disabled. Returning an empty value keeps
+ * the existing verifier from requiring ref1/ref2 for the standard mobile PromptPay QR.
+ */
+export function paymentBillerId() {
+  return '';
+}
+
+export function buildPromptPayMobilePayload(order: Pick<PaymentOrder, 'amount'>) {
+  const phone = paymentPromptPayPhone();
+  if (!phone) return null;
+
+  const normalizedPhone = `66${phone.slice(1)}`;
+  const merchantAccount =
+    tlv('00', 'A000000677010111') +
+    tlv('01', `00${normalizedPhone}`);
+
+  // The AMS integration guide's asserted example uses point-of-initiation value 11.
+  // Keep that exact contract so the implementation reproduces the documented sample.
+  const amount = normalizeThbAmount(order.amount);
+  const payload =
+    tlv('00', '01') +
+    tlv('01', '11') +
+    tlv('29', merchantAccount) +
+    tlv('58', 'TH') +
+    tlv('54', amount) +
+    tlv('53', '764');
+
+  const crcInput = `${payload}6304`;
+  return `${crcInput}${crc16Ccitt(crcInput)}`;
 }
 
 export async function findRecentPayableOrder(userId: string) {
@@ -94,8 +149,10 @@ export async function createWeeklyPaymentOrder(userId: string) {
   const id = randomUUID();
   const externalReference = compactId('MCDA', id);
   const paymentReference = compactId('PAY', randomUUID());
-  const ref1 = externalReference;
-  const ref2 = paymentReference;
+
+  // Standard mobile PromptPay QR does not carry ref1/ref2.
+  const ref1 = null;
+  const ref2 = null;
 
   const result = await pool.query<PaymentOrder>(
     `
