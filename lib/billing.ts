@@ -173,11 +173,23 @@ export function paymentBillerId() {
   return '';
 }
 
+function buildAdditionalData(reference: string) {
+  const normalized = reference.trim();
+  if (!normalized || !/^[A-Za-z0-9._-]+$/.test(normalized)) {
+    throw new Error('Invalid PromptPay order reference');
+  }
+  return tlv('62', tlv('05', normalized));
+}
+
 /**
  * Build Standard Thai PromptPay Tag 29 payload.
  * Bank of Thailand reserves sub-tag 01 for mobile and sub-tag 02 for National/Tax ID.
+ * The MCDA order reference is embedded in Additional Data Field Template 62,
+ * sub-tag 05 (Reference Label), before CRC field 63.
  */
-export function buildPromptPayPayload(order: Pick<PaymentOrder, 'amount'>) {
+export function buildPromptPayPayload(
+  order: Pick<PaymentOrder, 'amount' | 'external_reference'>,
+) {
   const target = paymentPromptPayTarget();
   if (!target) return null;
 
@@ -185,16 +197,16 @@ export function buildPromptPayPayload(order: Pick<PaymentOrder, 'amount'>) {
     tlv('00', 'A000000677010111') +
     tlv(target.merchantAccountSubTag, target.merchantAccountValue);
 
-  // Keep the existing client-guide contract for point-of-initiation while changing
-  // only the PromptPay proxy sub-tag/value according to the configured receiver type.
   const amount = normalizeThbAmount(order.amount);
+  const additionalData = buildAdditionalData(order.external_reference);
   const payload =
     tlv('00', '01') +
     tlv('01', '11') +
     tlv('29', merchantAccount) +
     tlv('58', 'TH') +
     tlv('54', amount) +
-    tlv('53', '764');
+    tlv('53', '764') +
+    additionalData;
 
   const crcInput = `${payload}6304`;
   return `${crcInput}${crc16Ccitt(crcInput)}`;
@@ -254,7 +266,8 @@ export async function createWeeklyPaymentOrder(userId: string) {
   const externalReference = compactId('MCDA', id);
   const paymentReference = compactId('PAY', randomUUID());
 
-  // Standard PromptPay Tag 29 (phone or National/Tax ID) does not carry ref1/ref2.
+  // Standard PromptPay uses field 62.05 for the order reference instead of the
+  // merchant-specific ref1/ref2 contract, so these legacy columns remain null.
   const ref1 = null;
   const ref2 = null;
 
