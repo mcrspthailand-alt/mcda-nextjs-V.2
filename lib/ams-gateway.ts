@@ -31,6 +31,19 @@ export type AmsSlipVerificationResponse = {
           transRef?: string;
           ref1?: string;
           ref2?: string;
+          receiver?: {
+            account?: {
+              name?: {
+                th?: string;
+                en?: string;
+              };
+              proxy?: {
+                type?: string;
+                account?: string;
+              };
+            };
+            merchantId?: string;
+          };
           amount?: {
             amount?: string | number;
             local?: {
