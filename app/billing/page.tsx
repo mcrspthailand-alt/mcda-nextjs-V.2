@@ -33,8 +33,10 @@ type BillingState = {
   order: PaymentOrder | null;
   qrDataUrl: string | null;
   paymentConfigured: boolean;
-  paymentMethod: 'promptpay_mobile';
+  paymentMethod: 'promptpay' | 'promptpay_mobile' | 'promptpay_national_id';
+  promptPayType: 'phone' | 'national_id' | null;
   promptPayAccount: string | null;
+  promptPayLabel: string | null;
   plan: {
     code: string;
     priceThb: string;
@@ -71,6 +73,10 @@ export default function BillingPage() {
       ),
     [state],
   );
+
+  const promptPayKind = state?.promptPayType === 'national_id'
+    ? 'เลขบัตรประชาชน / เลขประจำตัวผู้เสียภาษี'
+    : 'เบอร์มือถือ';
 
   async function loadBilling() {
     setLoading(true);
@@ -218,7 +224,7 @@ export default function BillingPage() {
 
           {!state.paymentConfigured ? (
             <div style={styles.warning}>
-              ระบบยังไม่ได้ตั้งค่า <code>MCDA_PROMPTPAY_PHONE</code> จึงยังสร้าง Standard Thai PromptPay QR ไม่ได้ ผู้ดูแลต้องตั้งค่าเบอร์มือถือไทย 10 หลักที่ลงทะเบียน PromptPay ไว้ใน Environment ก่อนเปิดรับชำระเงิน
+              ระบบยังไม่ได้ตั้งค่าบัญชีรับเงิน PromptPay จึงยังสร้าง QR ไม่ได้ กรุณาตั้งค่า <code>MCDA_PROMPTPAY_TYPE</code> และ <code>MCDA_PROMPTPAY_ID</code> ใน Environment โดยเลือก <code>phone</code> หรือ <code>national_id</code>
             </div>
           ) : null}
 
@@ -239,7 +245,8 @@ export default function BillingPage() {
                 </ol>
                 <div style={styles.refBox}>
                   <div><b>ช่องทาง:</b> Standard Thai PromptPay QR</div>
-                  <div><b>PromptPay:</b> {state.promptPayAccount || '-'}</div>
+                  <div><b>ประเภท PromptPay:</b> {state.promptPayLabel || promptPayKind}</div>
+                  <div><b>บัญชีรับเงิน:</b> {state.promptPayAccount || '-'}</div>
                   <div><b>Order reference:</b> {state.order.externalReference}</div>
                   <div><b>รายการหมดอายุ:</b> {formatThaiDate(state.order.expiresAt)}</div>
                 </div>
@@ -275,7 +282,7 @@ export default function BillingPage() {
       ) : null}
 
       <section style={styles.note}>
-        QR นี้เป็น Standard Thai PromptPay สำหรับเบอร์มือถือและฝังยอด 59.00 บาทโดยตรง การยืนยันการชำระเงินยังทำจากข้อมูลฝั่ง Server เท่านั้น และ Premium จะเริ่มนับ 7 วันจากเวลาที่การชำระเงินได้รับการยืนยันสำเร็จ
+        QR นี้เป็น Standard Thai PromptPay Tag 29 รองรับทั้งเบอร์มือถือและเลขบัตรประชาชน/เลขประจำตัวผู้เสียภาษี และฝังยอด 59.00 บาทโดยตรง การยืนยันการชำระเงินยังทำจากข้อมูลฝั่ง Server เท่านั้น และ Premium จะเริ่มนับ 7 วันจากเวลาที่การชำระเงินได้รับการยืนยันสำเร็จ
       </section>
     </main>
   );
