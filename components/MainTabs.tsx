@@ -13,9 +13,14 @@ function tabFromHash(): MainTab {
 
 export default function MainTabs() {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
+  const [analysisMounted, setAnalysisMounted] = useState(false);
 
   useEffect(() => {
-    const syncFromHash = () => setActiveTab(tabFromHash());
+    const syncFromHash = () => {
+      const nextTab = tabFromHash();
+      setActiveTab(nextTab);
+      if (nextTab === 'analysis') setAnalysisMounted(true);
+    };
     syncFromHash();
     window.addEventListener('hashchange', syncFromHash);
     return () => window.removeEventListener('hashchange', syncFromHash);
@@ -26,6 +31,7 @@ export default function MainTabs() {
   }, [activeTab]);
 
   function selectTab(tab: MainTab) {
+    if (tab === 'analysis') setAnalysisMounted(true);
     setActiveTab(tab);
     const hash = tab === 'analysis' ? '#analysis' : '#home';
     window.history.replaceState(null, '', hash);
@@ -71,13 +77,15 @@ export default function MainTabs() {
         <McdaHome onOpenAnalysis={() => selectTab('analysis')} />
       </section>
 
-      <section
-        role="tabpanel"
-        aria-label="MCDA Analysis"
-        style={{ display: activeTab === 'analysis' ? 'block' : 'none' }}
-      >
-        <McdaApp />
-      </section>
+      {analysisMounted ? (
+        <section
+          role="tabpanel"
+          aria-label="MCDA Analysis"
+          style={{ display: activeTab === 'analysis' ? 'block' : 'none' }}
+        >
+          <McdaApp />
+        </section>
+      ) : null}
     </div>
   );
 }
