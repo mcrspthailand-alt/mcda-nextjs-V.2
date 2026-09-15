@@ -1,8 +1,10 @@
 # MCDA Next.js V.2
 
-Next.js migration of the MCDA **v26 Dynamic Selected-Model PDF Export** application.
+Next.js migration of the MCDA multi-method decision analysis application.
 
-## Included analysis models
+## Analysis models
+
+The engine supports 13 matrix-compatible methods:
 
 - SAW
 - WPM
@@ -18,30 +20,38 @@ Next.js migration of the MCDA **v26 Dynamic Selected-Model PDF Export** applicat
 - PROMETHEE II
 - ELECTRE I
 
-## v26 behavior preserved
+It includes comparative ranking, complexity-ordered Rank Movement, grayscale Sensitivity Analysis, descriptive interpretation, Excel/CSV features, and selected-model PDF reporting.
 
-- Purpose-grouped multi-model selection
-- Comparative ranking and complexity-ordered Rank Movement
-- Complexity-ordered Sensitivity tables
-- Grayscale Sensitivity trajectories with fullscreen controls
-- 500–1000 word narrative interpretation
-- Excel import/export and CSV export
-- **Dynamic PDF export that follows the selected models**
-  - SAW selected → SAW result + SAW Sensitivity in PDF
-  - SAW + TOPSIS selected → both models in PDF
-  - SAW + TOPSIS + VIKOR selected → all three models in PDF
-  - the same behavior applies to all 13 supported models
+## Authentication and membership
 
-## Architecture
+The application requires a signed-in account.
 
-- `app/` — Next.js App Router and global styles
-- `components/McdaApp.tsx` — client bootstrap
-- `lib/mcdaMarkup.ts` — migrated v26 dashboard markup
-- `public/mcda-loader.js` — loads the compressed browser engine
-- `public/engine-data/part-*.txt` — gzip/base64 chunks of the v26 calculation/report engine
-- `public/mcda-logo.svg` — logo asset
+### Free
 
-The browser engine is intentionally isolated from the React shell to preserve numerical and report parity with the verified single-file v26 implementation while allowing gradual refactoring into TypeScript modules later.
+- 10 Generate/analysis operations per account per Bangkok calendar day.
+- Available models: TOPSIS, PROMETHEE II, MOORA, ELECTRE I.
+- One validated click on **Analyze + Sensitivity** counts as one operation, regardless of how many allowed free models are selected.
+
+### Premium Weekly
+
+- 59 THB for 7 days from verified payment time.
+- All 13 analysis models unlocked.
+- Unlimited analysis operations while the subscription is active.
+
+Payment orders and subscriptions are stored in PostgreSQL. Bank-slip verification is performed server-to-server through AMS Payment Gateway. The AMS API key must never be exposed to the browser.
+
+## Payment configuration
+
+Required production environment variables:
+
+```env
+AMS_GATEWAY_BASE_URL=https://ams-gateway.micro-support.com
+AMS_GATEWAY_API_KEY=ams_...
+AMS_SERVICE_CODE=<assigned-service-code>
+MCDA_PAYMENT_BILLER_ID=<confirmed-merchant-or-biller-id>
+```
+
+`MCDA_PAYMENT_BILLER_ID` is intentionally not hard-coded because the QR payload format is merchant-specific. Confirm the production merchant/biller ID before enabling payments.
 
 ## Local development
 
@@ -63,7 +73,7 @@ npm start
 
 ```bash
 docker build -t mcda-nextjs-v2 .
-docker run --rm -p 3000:3000 mcda-nextjs-v2
+docker run --rm -p 3000:3000 --env-file .env mcda-nextjs-v2
 ```
 
-Health endpoint: `/api/health`
+The existing `/api/health` endpoint can be used as the container health check.

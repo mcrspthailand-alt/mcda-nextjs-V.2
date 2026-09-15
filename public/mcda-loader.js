@@ -1,5 +1,5 @@
 (function () {
-  const ENGINE_VERSION = '27';
+  const ENGINE_VERSION = '28';
   const MAX_ATTEMPTS = 3;
   let attempt = 0;
 
@@ -13,6 +13,7 @@
 
   function loadEngine() {
     if (document.querySelector(`script[data-mcda-engine-runtime="v${ENGINE_VERSION}"]`)) {
+      window.dispatchEvent(new CustomEvent('mcda-engine-ready', { detail: { version: ENGINE_VERSION } }));
       return;
     }
 
@@ -29,6 +30,7 @@
 
     engine.onload = () => {
       console.info(`MCDA engine v${ENGINE_VERSION} loaded successfully`);
+      window.dispatchEvent(new CustomEvent('mcda-engine-ready', { detail: { version: ENGINE_VERSION } }));
     };
 
     engine.onerror = () => {

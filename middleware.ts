@@ -11,11 +11,12 @@ export async function middleware(request: NextRequest) {
       // Invalid or expired cookie.
     }
   }
+
   return NextResponse.redirect(new URL('/auth/sign-in', request.url));
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|auth|api/auth|api/health|api/mcda-engine|mcda-loader.js|engine-data|mcda-logo.svg).*)',
+    '/((?!_next/static|_next/image|favicon.ico|auth|api/auth|api/health|api/mcda-engine|api/account|api/analysis|api/billing|mcda-loader.js|engine-data|mcda-logo.svg).*)',
   ],
 };
