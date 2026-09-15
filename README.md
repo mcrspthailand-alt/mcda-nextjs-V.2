@@ -48,10 +48,14 @@ Required production environment variables:
 AMS_GATEWAY_BASE_URL=https://ams-gateway.micro-support.com
 AMS_GATEWAY_API_KEY=ams_...
 AMS_SERVICE_CODE=<assigned-service-code>
-MCDA_PAYMENT_BILLER_ID=<confirmed-merchant-or-biller-id>
+MCDA_PROMPTPAY_PHONE=<10-digit-Thai-mobile-number>
 ```
 
-`MCDA_PAYMENT_BILLER_ID` is intentionally not hard-coded because the QR payload format is merchant-specific. Confirm the production merchant/biller ID before enabling payments.
+`MCDA_PROMPTPAY_PHONE` must be the real Thai mobile number registered for the PromptPay receiver. It stays server-side and is used to build a standard Thai PromptPay EMVCo QR payload with the fixed order amount (59.00 THB).
+
+The current billing flow no longer uses the merchant-specific `|biller-id\rref1\rref2\ramount-minor-unit` QR format. Standard mobile PromptPay QR does not embed `ref1/ref2`; order association and payment acceptance are enforced server-side through the selected payment order, expected amount/currency, AMS verification result, duplicate status, and provider transaction reference uniqueness.
+
+See `docs/PROMPTPAY_QR_IMPLEMENTATION.md` for the payload details.
 
 ## Local development
 
