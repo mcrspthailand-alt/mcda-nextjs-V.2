@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import QRCode from 'qrcode';
 import { getRequestUser } from '@/lib/request-user';
-import { getEntitlements } from '@/lib/membership';
+import { getEntitlements, getWeeklyPlan } from '@/lib/membership';
+import { isAdminEmail } from '@/lib/admin';
 import {
-  PAYMENT_PLAN,
   buildPromptPayPayload,
   createWeeklyPaymentOrder,
   findLatestPaymentOrder,
   paymentPromptPayTarget,
   publicPaymentOrder,
+  publicPaymentPlan,
   type PaymentOrder,
 } from '@/lib/billing';
 
@@ -16,6 +17,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 async function responseOrder(order: PaymentOrder | null) {
+  const plan = await getWeeklyPlan();
   const publicOrder = publicPaymentOrder(order);
   const target = paymentPromptPayTarget();
   const payload = order ? buildPromptPayPayload(order) : null;
@@ -39,7 +41,12 @@ async function responseOrder(order: PaymentOrder | null) {
     promptPayType: target?.type ?? null,
     promptPayAccount: target?.masked ?? null,
     promptPayLabel: target?.label ?? null,
-    plan: PAYMENT_PLAN,
+    plan: publicPaymentPlan(plan),
+    stripeEnabled: Boolean(
+      (process.env.STRIPE_PUBLISHABLE_KEY ?? '').startsWith('pk_') &&
+      (process.env.STRIPE_WEBHOOK_SECRET ?? '').startsWith('whsec_') &&
+      (process.env.AMS_GATEWAY_API_KEY ?? '').trim()
+    ),
   };
 }
 
@@ -52,10 +59,10 @@ export async function GET(request: NextRequest) {
   try {
     const [entitlements, order] = await Promise.all([
       getEntitlements(user.id),
-      findLatestPaymentOrder(user.id),
+      getWeeklyPlan().then((plan) => findLatestPaymentOrder(user.id, plan)),
     ]);
     return NextResponse.json(
-      { entitlements, ...(await responseOrder(order)) },
+      { entitlements, canManagePlan: isAdminEmail(user.email), ...(await responseOrder(order)) },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
@@ -77,7 +84,7 @@ export async function POST(request: NextRequest) {
     const order = await createWeeklyPaymentOrder(user.id);
     const entitlements = await getEntitlements(user.id);
     return NextResponse.json(
-      { entitlements, ...(await responseOrder(order)) },
+      { entitlements, canManagePlan: isAdminEmail(user.email), ...(await responseOrder(order)) },
       { status: 201, headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
