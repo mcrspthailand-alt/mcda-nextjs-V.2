@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { getPool } from '@/lib/db';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
 import {
-  WEEKLY_PLAN_DAYS,
-  WEEKLY_PLAN_PRICE_THB,
+  WEEKLY_PLAN_CODE,
+  getWeeklyPlan,
+  type MembershipPlan,
 } from '@/lib/membership';
 
 export type PaymentOrder = {
@@ -22,6 +23,11 @@ export type PaymentOrder = {
   paid_at: Date | null;
   expires_at: Date;
   created_at: Date;
+  plan_code: string | null;
+  plan_duration_days: number | null;
+  payment_method: string | null;
+  stripe_payment_intent_id: string | null;
+  ams_payment_id: string | null;
 };
 
 export type PromptPayProxyType = 'phone' | 'national_id';
@@ -215,7 +221,7 @@ export function buildPromptPayPayload(
 // Backward-compatible export for code compiled against the previous mobile-only helper.
 export const buildPromptPayMobilePayload = buildPromptPayPayload;
 
-export async function findRecentPayableOrder(userId: string) {
+export async function findRecentPayableOrder(userId: string, plan: MembershipPlan) {
   await ensureMembershipSchema();
   const pool = getPool();
   const result = await pool.query<PaymentOrder>(
@@ -223,22 +229,25 @@ export async function findRecentPayableOrder(userId: string) {
       SELECT
         id, user_id, external_reference, payment_reference, ref1, ref2,
         amount::text, currency, status, provider, verification_id,
-        provider_reference, paid_at, expires_at, created_at
+        provider_reference, paid_at, expires_at, created_at,
+        plan_code, plan_duration_days, payment_method,
+        stripe_payment_intent_id, ams_payment_id
       FROM payment_orders
       WHERE user_id = $1
-        AND status = 'awaiting_payment'
+        AND status IN ('awaiting_payment', 'processing')
         AND expires_at > NOW()
         AND currency = 'THB'
         AND amount = $2::numeric
+        AND (plan_code = $3 OR plan_code IS NULL)
       ORDER BY created_at DESC
       LIMIT 1
     `,
-    [userId, WEEKLY_PLAN_PRICE_THB],
+    [userId, plan.priceThb, plan.code],
   );
   return result.rows[0] ?? null;
 }
 
-export async function findLatestPaymentOrder(userId: string) {
+export async function findLatestPaymentOrder(userId: string, plan: MembershipPlan) {
   await ensureMembershipSchema();
   const pool = getPool();
   const result = await pool.query<PaymentOrder>(
@@ -246,15 +255,18 @@ export async function findLatestPaymentOrder(userId: string) {
       SELECT
         id, user_id, external_reference, payment_reference, ref1, ref2,
         amount::text, currency, status, provider, verification_id,
-        provider_reference, paid_at, expires_at, created_at
+        provider_reference, paid_at, expires_at, created_at,
+        plan_code, plan_duration_days, payment_method,
+        stripe_payment_intent_id, ams_payment_id
       FROM payment_orders
       WHERE user_id = $1
         AND currency = 'THB'
         AND amount = $2::numeric
+        AND (plan_code = $3 OR plan_code IS NULL)
       ORDER BY created_at DESC
       LIMIT 1
     `,
-    [userId, WEEKLY_PLAN_PRICE_THB],
+    [userId, plan.priceThb, plan.code],
   );
   return result.rows[0] ?? null;
 }
@@ -262,6 +274,8 @@ export async function findLatestPaymentOrder(userId: string) {
 export async function createWeeklyPaymentOrder(userId: string) {
   await ensureMembershipSchema();
   const pool = getPool();
+  const plan = await getWeeklyPlan();
+  if (!plan.isActive) throw new Error('Premium plan is not active');
 
   // A payable QR must always reflect the current configured package price.
   // When the admin changes MCDA_PREMIUM_WEEKLY_PRICE_THB, retire any still-payable
@@ -276,10 +290,10 @@ export async function createWeeklyPaymentOrder(userId: string) {
         AND expires_at > NOW()
         AND (currency <> 'THB' OR amount <> $2::numeric)
     `,
-    [userId, WEEKLY_PLAN_PRICE_THB],
+    [userId, plan.priceThb],
   );
 
-  const existing = await findRecentPayableOrder(userId);
+  const existing = await findRecentPayableOrder(userId, plan);
   if (existing) return existing;
 
   const id = randomUUID();
@@ -295,18 +309,20 @@ export async function createWeeklyPaymentOrder(userId: string) {
     `
       INSERT INTO payment_orders (
         id, user_id, external_reference, payment_reference, ref1, ref2,
-        amount, currency, status, expires_at
+        amount, currency, status, expires_at, plan_code, plan_duration_days
       )
       VALUES (
         $1, $2, $3, $4, $5, $6,
-        $7::numeric, 'THB', 'awaiting_payment', NOW() + INTERVAL '24 hours'
+        $7::numeric, 'THB', 'awaiting_payment', NOW() + INTERVAL '24 hours', $8, $9
       )
       RETURNING
         id, user_id, external_reference, payment_reference, ref1, ref2,
         amount::text, currency, status, provider, verification_id,
-        provider_reference, paid_at, expires_at, created_at
+        provider_reference, paid_at, expires_at, created_at,
+        plan_code, plan_duration_days, payment_method,
+        stripe_payment_intent_id, ams_payment_id
     `,
-    [id, userId, externalReference, paymentReference, ref1, ref2, WEEKLY_PLAN_PRICE_THB],
+    [id, userId, externalReference, paymentReference, ref1, ref2, plan.priceThb, plan.code, plan.durationDays],
   );
 
   return result.rows[0];
@@ -326,12 +342,16 @@ export function publicPaymentOrder(order: PaymentOrder | null) {
     paidAt: order.paid_at ? new Date(order.paid_at).toISOString() : null,
     expiresAt: new Date(order.expires_at).toISOString(),
     createdAt: new Date(order.created_at).toISOString(),
+    paymentMethod: order.payment_method,
+    stripePaymentIntentId: order.stripe_payment_intent_id,
   };
 }
 
-export const PAYMENT_PLAN = Object.freeze({
-  code: 'mcda_weekly_unlimited',
-  priceThb: WEEKLY_PLAN_PRICE_THB,
-  durationDays: WEEKLY_PLAN_DAYS,
-  title: 'MCDA Premium Weekly',
-});
+export function publicPaymentPlan(plan: MembershipPlan) {
+  return {
+    code: plan.code || WEEKLY_PLAN_CODE,
+    priceThb: plan.priceThb,
+    durationDays: plan.durationDays,
+    title: plan.title,
+  };
+}
