@@ -5,7 +5,6 @@ import { getRequestUser } from '@/lib/request-user';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
 import {
   WEEKLY_PLAN_CODE,
-  WEEKLY_PLAN_DAYS,
   getEntitlements,
 } from '@/lib/membership';
 import { paymentPromptPayTarget, type PromptPayTarget } from '@/lib/billing';
@@ -23,6 +22,7 @@ const RECOVERABLE_ORDER_STATUSES = new Set([
   'verification_failed',
   'provider_error',
   'failed',
+  'processing',
 ]);
 
 type OrderRow = {
@@ -38,6 +38,8 @@ type OrderRow = {
   provider_reference: string | null;
   provider_response: unknown;
   expires_at: Date;
+  plan_code: string | null;
+  plan_duration_days: number | null;
 };
 
 type RawReceiver = {
@@ -237,7 +239,7 @@ export async function POST(
       SELECT
         id, user_id, external_reference, payment_reference, ref1, ref2,
         amount::text, currency, status, provider_reference, provider_response,
-        expires_at
+        expires_at, plan_code, plan_duration_days
       FROM payment_orders
       WHERE id = $1 AND user_id = $2
       LIMIT 1
@@ -510,7 +512,10 @@ export async function POST(
     }
 
     const paidAt = safeDate(normalized.verified_at);
-    const endsAt = new Date(paidAt.getTime() + WEEKLY_PLAN_DAYS * 24 * 60 * 60 * 1000);
+    const durationDays = locked.plan_duration_days && locked.plan_duration_days > 0
+      ? locked.plan_duration_days
+      : 7;
+    const endsAt = new Date(paidAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
     await client.query(
       `
@@ -543,14 +548,14 @@ export async function POST(
         ON CONFLICT (payment_order_id)
         DO NOTHING
       `,
-      [randomUUID(), user.id, WEEKLY_PLAN_CODE, paidAt, endsAt, order.id],
+      [randomUUID(), user.id, locked.plan_code || WEEKLY_PLAN_CODE, paidAt, endsAt, order.id],
     );
 
     await client.query('COMMIT');
 
     return NextResponse.json({
       ok: true,
-      message: 'ชำระเงินสำเร็จ เปิดใช้งาน Premium 7 วันแล้ว',
+      message: `ชำระเงินสำเร็จ เปิดใช้งาน Premium ${durationDays} วันแล้ว`,
       premiumUntil: endsAt.toISOString(),
       entitlements: await getEntitlements(user.id),
     });
