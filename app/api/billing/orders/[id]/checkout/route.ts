@@ -140,7 +140,7 @@ export async function POST(
       description: `MCDA Premium ${order.external_reference}`,
       idempotencyKey: `${order.id}-stripe-checkout-v1`,
       paymentMethodTypes: stripeMethods(),
-      successUrl: `${origin}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      successUrl: `${origin}/billing?checkout=success&order_id=${encodeURIComponent(order.external_reference)}`,
       cancelUrl: `${origin}/billing?checkout=cancel&order_id=${encodeURIComponent(order.external_reference)}`,
       webhookUrl: `${origin}/api/webhooks/ams`,
     });
