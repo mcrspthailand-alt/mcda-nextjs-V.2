@@ -208,6 +208,7 @@ export async function createStripePaymentIntentWithAms(input: {
   description: string;
   idempotencyKey: string;
   paymentMethodTypes?: Array<'card' | 'promptpay'>;
+  webhookUrl: string;
 }) {
   const requestId = randomUUID();
   const endpoint = `${gatewayBaseUrl()}/api/v1/payments/stripe/intents`;
@@ -217,6 +218,7 @@ export async function createStripePaymentIntentWithAms(input: {
     payment_method_types: input.paymentMethodTypes ?? ['card', 'promptpay'],
     external_reference: input.externalReference,
     description: input.description,
+    webhook_url: input.webhookUrl,
   };
 
   paymentDebugLog('AMS STRIPE REQUEST', {

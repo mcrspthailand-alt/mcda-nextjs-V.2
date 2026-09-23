@@ -44,8 +44,8 @@ async function responseOrder(order: PaymentOrder | null) {
     plan: publicPaymentPlan(plan),
     stripeEnabled: Boolean(
       (process.env.STRIPE_PUBLISHABLE_KEY ?? '').startsWith('pk_') &&
-      (process.env.STRIPE_WEBHOOK_SECRET ?? '').startsWith('whsec_') &&
-      (process.env.AMS_GATEWAY_API_KEY ?? '').trim()
+      (process.env.AMS_GATEWAY_API_KEY ?? '').trim() &&
+      (process.env.AMS_SERVICE_CODE ?? '').trim()
     ),
   };
 }

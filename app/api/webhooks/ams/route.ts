@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
@@ -7,7 +7,7 @@ import { WEEKLY_PLAN_CODE } from '@/lib/membership';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type StripeEvent = {
+type StripeRelayEvent = {
   id: string;
   type: string;
   created: number;
@@ -35,27 +35,6 @@ type OrderRow = {
   stripe_payment_intent_id: string | null;
 };
 
-function verifyStripeSignature(rawBody: string, header: string, secret: string) {
-  const pieces = header.split(',').map((part) => part.trim());
-  const timestamp = pieces.find((part) => part.startsWith('t='))?.slice(2);
-  const signatures = pieces.filter((part) => part.startsWith('v1=')).map((part) => part.slice(3));
-  if (!timestamp || signatures.length === 0 || !/^\d+$/.test(timestamp)) return false;
-
-  const ageSeconds = Math.abs(Date.now() / 1000 - Number(timestamp));
-  if (!Number.isFinite(ageSeconds) || ageSeconds > 300) return false;
-
-  const expected = createHmac('sha256', secret)
-    .update(`${timestamp}.${rawBody}`, 'utf8')
-    .digest('hex');
-
-  return signatures.some((candidate) => {
-    if (!/^[0-9a-f]{64}$/i.test(candidate)) return false;
-    const left = Buffer.from(expected, 'hex');
-    const right = Buffer.from(candidate, 'hex');
-    return left.length === right.length && timingSafeEqual(left, right);
-  });
-}
-
 function amountToSatang(amount: string) {
   const match = amount.match(/^(\d+)(?:\.(\d{1,2}))?$/);
   if (!match) throw new Error('Invalid order amount');
@@ -63,26 +42,32 @@ function amountToSatang(amount: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const secret = (process.env.STRIPE_WEBHOOK_SECRET ?? '').trim();
-  if (!secret.startsWith('whsec_')) {
-    return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
+  const relayEventType = request.headers.get('x-ams-webhook-event') ?? '';
+  const deliveryId = request.headers.get('x-ams-webhook-delivery-id') ?? '';
+  const provider = (request.headers.get('x-ams-webhook-provider') ?? '').toLowerCase();
+
+  if (!relayEventType || !deliveryId || provider !== 'stripe') {
+    return NextResponse.json(
+      { error: { code: 'INVALID_AMS_RELAY', message: 'Missing or invalid AMS webhook relay headers' } },
+      { status: 400 },
+    );
   }
 
-  const rawBody = await request.text();
-  const signature = request.headers.get('stripe-signature') ?? '';
-  if (!verifyStripeSignature(rawBody, signature, secret)) {
-    return NextResponse.json({ error: 'Invalid Stripe signature' }, { status: 400 });
-  }
-
-  let event: StripeEvent;
+  let event: StripeRelayEvent;
   try {
-    event = JSON.parse(rawBody) as StripeEvent;
+    event = (await request.json()) as StripeRelayEvent;
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    return NextResponse.json(
+      { error: { code: 'INVALID_AMS_RELAY_BODY', message: 'AMS relay body is not valid JSON' } },
+      { status: 400 },
+    );
   }
 
-  if (!event.id || !event.type || !event.data?.object) {
-    return NextResponse.json({ error: 'Invalid Stripe event' }, { status: 400 });
+  if (!event.id || !event.type || !event.data?.object || event.type !== relayEventType) {
+    return NextResponse.json(
+      { error: { code: 'AMS_RELAY_EVENT_MISMATCH', message: 'AMS relay event header/body mismatch' } },
+      { status: 422 },
+    );
   }
 
   if (!event.type.startsWith('payment_intent.')) {
@@ -92,8 +77,22 @@ export async function POST(request: NextRequest) {
   const intent = event.data.object;
   const paymentIntentId = intent.id;
   const externalReference = intent.metadata?.ams_external_reference;
-  if (!paymentIntentId || (!externalReference && event.type === 'payment_intent.succeeded')) {
-    return NextResponse.json({ error: 'Missing payment identity' }, { status: 422 });
+  const eventServiceCode = intent.metadata?.ams_service_code;
+  const configuredServiceCode = (process.env.AMS_SERVICE_CODE ?? '').trim();
+
+  if (!paymentIntentId || !externalReference || !configuredServiceCode || eventServiceCode !== configuredServiceCode) {
+    return NextResponse.json(
+      { error: { code: 'AMS_PAYMENT_IDENTITY_MISMATCH', message: 'Stripe metadata does not match this MCDA service' } },
+      { status: 422 },
+    );
+  }
+
+  const expectedLive = (process.env.STRIPE_PUBLISHABLE_KEY ?? '').startsWith('pk_live_');
+  if (event.livemode !== expectedLive) {
+    return NextResponse.json(
+      { error: { code: 'STRIPE_MODE_MISMATCH', message: 'Stripe test/live mode mismatch' } },
+      { status: 422 },
+    );
   }
 
   await ensureMembershipSchema();
@@ -105,30 +104,25 @@ export async function POST(request: NextRequest) {
         plan_code, plan_duration_days, stripe_payment_intent_id
       FROM payment_orders
       WHERE stripe_payment_intent_id = $1
-         OR ($2::text IS NOT NULL AND external_reference = $2)
+         OR external_reference = $2
       ORDER BY CASE WHEN stripe_payment_intent_id = $1 THEN 0 ELSE 1 END
       LIMIT 1
     `,
-    [paymentIntentId, externalReference ?? null],
+    [paymentIntentId, externalReference],
   );
   const order = lookup.rows[0];
 
-  // Stripe may deliver an unrelated event for the same account. Acknowledge it
-  // without mutating MCDA state.
-  if (!order) return NextResponse.json({ received: true });
-
-  const configuredServiceCode = (process.env.AMS_SERVICE_CODE ?? '').trim();
-  const eventServiceCode = intent.metadata?.ams_service_code;
-  if (
-    externalReference !== order.external_reference ||
-    (eventServiceCode && configuredServiceCode && eventServiceCode !== configuredServiceCode)
-  ) {
-    return NextResponse.json({ error: 'Payment metadata mismatch' }, { status: 422 });
+  if (!order) {
+    // The AMS account may relay events belonging to another client transaction.
+    // Acknowledge unknown events so AMS does not retry them indefinitely.
+    return NextResponse.json({ received: true, ignored: true });
   }
 
-  const expectedLive = (process.env.STRIPE_PUBLISHABLE_KEY ?? '').startsWith('pk_live_');
-  if (event.livemode !== expectedLive) {
-    return NextResponse.json({ error: 'Stripe mode mismatch' }, { status: 422 });
+  if (externalReference !== order.external_reference) {
+    return NextResponse.json(
+      { error: { code: 'ORDER_REFERENCE_MISMATCH', message: 'Payment reference does not match MCDA order' } },
+      { status: 422 },
+    );
   }
 
   if (event.type === 'payment_intent.succeeded') {
@@ -137,7 +131,10 @@ export async function POST(request: NextRequest) {
       received !== amountToSatang(order.amount) ||
       String(intent.currency ?? '').toUpperCase() !== order.currency
     ) {
-      return NextResponse.json({ error: 'Payment amount mismatch' }, { status: 422 });
+      return NextResponse.json(
+        { error: { code: 'PAYMENT_AMOUNT_MISMATCH', message: 'Stripe payment amount/currency does not match order' } },
+        { status: 422 },
+      );
     }
   }
 
@@ -145,6 +142,9 @@ export async function POST(request: NextRequest) {
   try {
     await client.query('BEGIN');
 
+    // Stripe event ID is the primary idempotency identity. The AMS delivery ID is
+    // useful for logs/operations but AMS may redeliver the same Stripe event using
+    // a different delivery ID.
     const eventInsert = await client.query(
       `
         INSERT INTO payment_events (event_id, order_id, event_type)
@@ -154,6 +154,7 @@ export async function POST(request: NextRequest) {
       `,
       [event.id, order.id, event.type],
     );
+
     if (!eventInsert.rowCount) {
       await client.query('COMMIT');
       return NextResponse.json({ received: true, duplicate: true });
@@ -224,9 +225,12 @@ export async function POST(request: NextRequest) {
           ? 'processing'
           : event.type === 'payment_intent.canceled'
             ? 'canceled'
-            : event.type === 'payment_intent.payment_failed'
+            : event.type === 'payment_intent.payment_failed' ||
+                event.type === 'payment_intent.requires_payment_method'
               ? 'awaiting_payment'
-              : locked.status;
+              : event.type === 'payment_intent.requires_action'
+                ? 'processing'
+                : locked.status;
 
       await client.query(
         `
@@ -243,10 +247,18 @@ export async function POST(request: NextRequest) {
     }
 
     await client.query('COMMIT');
+
+    console.info('[MCDA AMS WEBHOOK]', {
+      deliveryId,
+      stripeEventId: event.id,
+      eventType: event.type,
+      orderId: order.id,
+    });
+
     return NextResponse.json({ received: true });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Unable to reconcile Stripe webhook', error);
+    console.error('Unable to reconcile AMS Stripe relay', { deliveryId, error });
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   } finally {
     client.release();
