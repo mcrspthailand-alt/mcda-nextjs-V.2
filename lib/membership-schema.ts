@@ -12,6 +12,20 @@ export function ensureMembershipSchema() {
       const pool = getPool();
 
       await pool.query(`
+        CREATE TABLE IF NOT EXISTS membership_plans (
+          code VARCHAR(64) PRIMARY KEY,
+          title VARCHAR(160) NOT NULL,
+          price_thb NUMERIC(10,2) NOT NULL CHECK (price_thb > 0),
+          duration_days INTEGER NOT NULL CHECK (duration_days > 0),
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        INSERT INTO membership_plans (code, title, price_thb, duration_days, is_active)
+        VALUES ('mcda_weekly_unlimited', 'MCDA Premium Weekly', 59.00, 7, TRUE)
+        ON CONFLICT (code) DO NOTHING;
+
         CREATE TABLE IF NOT EXISTS payment_orders (
           id TEXT PRIMARY KEY,
           user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -30,6 +44,24 @@ export function ensureMembershipSchema() {
           expires_at TIMESTAMPTZ NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE payment_orders
+          ADD COLUMN IF NOT EXISTS plan_code VARCHAR(64),
+          ADD COLUMN IF NOT EXISTS plan_duration_days INTEGER,
+          ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32),
+          ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT,
+          ADD COLUMN IF NOT EXISTS ams_payment_id TEXT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_stripe_intent
+          ON payment_orders (stripe_payment_intent_id)
+          WHERE stripe_payment_intent_id IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS payment_events (
+          event_id TEXT PRIMARY KEY,
+          order_id TEXT REFERENCES payment_orders(id) ON DELETE CASCADE,
+          event_type VARCHAR(96) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
         CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created
