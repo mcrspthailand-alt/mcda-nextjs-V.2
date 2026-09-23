@@ -26,42 +26,109 @@ export const FREE_MCDA_MODELS = Object.freeze([
 
 export const FREE_DAILY_ANALYSIS_LIMIT = 10;
 export const WEEKLY_PLAN_CODE = 'mcda_weekly_unlimited';
-export const WEEKLY_PLAN_DAYS = 7;
+export const DEFAULT_WEEKLY_PLAN_DAYS = 7;
+export const DEFAULT_WEEKLY_PLAN_PRICE_THB = '59.00';
 
-const DEFAULT_WEEKLY_PLAN_PRICE_THB = '59.00';
+export type MembershipPlan = {
+  code: string;
+  title: string;
+  priceThb: string;
+  durationDays: number;
+  isActive: boolean;
+};
 
-function normalizeWeeklyPlanPrice(value: string | undefined) {
-  const raw = (value ?? '').trim();
-  if (!raw) return DEFAULT_WEEKLY_PLAN_PRICE_THB;
-
+function normalizePlanAmount(value: unknown) {
+  const raw = String(value ?? '').trim();
   const match = raw.match(/^(\d+)(?:\.(\d{1,2}))?$/);
-  if (!match) {
-    throw new Error('MCDA_PREMIUM_WEEKLY_PRICE_THB must be a positive THB amount with at most 2 decimal places');
-  }
-
-  // Keep price parsing compatible with the project's ES2017 target. Avoid BigInt
-  // literals (for example 100n / 0n), which TypeScript rejects below ES2020.
+  if (!match) throw new Error('Plan price must be a positive THB amount with at most 2 decimal places');
   const whole = match[1].replace(/^0+(?=\d)/, '');
   const decimals = (match[2] ?? '').padEnd(2, '0');
-  const isZero = /^0+$/.test(whole) && decimals === '00';
-  if (isZero) {
-    throw new Error('MCDA_PREMIUM_WEEKLY_PRICE_THB must be greater than 0');
-  }
-
+  if (/^0+$/.test(whole) && decimals === '00') throw new Error('Plan price must be greater than 0');
   return `${whole}.${decimals}`;
 }
 
-/**
- * Weekly Premium price, resolved server-side from the environment.
- * Defaults to 59.00 THB when the variable is not configured.
- */
-export const WEEKLY_PLAN_PRICE_THB = normalizeWeeklyPlanPrice(
-  process.env.MCDA_PREMIUM_WEEKLY_PRICE_THB,
-);
+function publicPlan(row: {
+  code: string;
+  title: string;
+  price_thb: string;
+  duration_days: number;
+  is_active: boolean;
+}): MembershipPlan {
+  return {
+    code: row.code,
+    title: row.title,
+    priceThb: normalizePlanAmount(row.price_thb),
+    durationDays: Number(row.duration_days),
+    isActive: Boolean(row.is_active),
+  };
+}
 
-export const WEEKLY_PLAN_PRICE_LABEL = WEEKLY_PLAN_PRICE_THB.endsWith('.00')
-  ? WEEKLY_PLAN_PRICE_THB.slice(0, -3)
-  : WEEKLY_PLAN_PRICE_THB;
+export async function getWeeklyPlan(): Promise<MembershipPlan> {
+  await ensureMembershipSchema();
+  const result = await getPool().query<{
+    code: string;
+    title: string;
+    price_thb: string;
+    duration_days: number;
+    is_active: boolean;
+  }>(
+    `
+      SELECT code, title, price_thb::text, duration_days, is_active
+      FROM membership_plans
+      WHERE code = $1
+      LIMIT 1
+    `,
+    [WEEKLY_PLAN_CODE],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return {
+      code: WEEKLY_PLAN_CODE,
+      title: 'MCDA Premium Weekly',
+      priceThb: DEFAULT_WEEKLY_PLAN_PRICE_THB,
+      durationDays: DEFAULT_WEEKLY_PLAN_DAYS,
+      isActive: true,
+    };
+  }
+  return publicPlan(row);
+}
+
+export async function updateWeeklyPlan(input: { priceThb: unknown; durationDays?: unknown }) {
+  await ensureMembershipSchema();
+  const current = await getWeeklyPlan();
+  const priceThb = normalizePlanAmount(input.priceThb);
+  const durationDays = input.durationDays === undefined
+    ? current.durationDays
+    : Number(input.durationDays);
+
+  if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3650) {
+    throw new Error('Plan duration must be an integer from 1 to 3650 days');
+  }
+
+  const result = await getPool().query<{
+    code: string;
+    title: string;
+    price_thb: string;
+    duration_days: number;
+    is_active: boolean;
+  }>(
+    `
+      UPDATE membership_plans
+      SET price_thb = $2::numeric,
+          duration_days = $3,
+          updated_at = NOW()
+      WHERE code = $1
+      RETURNING code, title, price_thb::text, duration_days, is_active
+    `,
+    [WEEKLY_PLAN_CODE, priceThb, durationDays],
+  );
+  return publicPlan(result.rows[0]);
+}
+
+function planPriceLabel(value: string) {
+  return value.endsWith('.00') ? value.slice(0, -3) : value;
+}
 
 export type PlanTier = 'free' | 'premium';
 
@@ -97,7 +164,8 @@ export async function getEntitlements(userId: string): Promise<Entitlements> {
   const pool = getPool();
   const usageDate = bangkokDateKey();
 
-  const [subscriptionResult, usageResult] = await Promise.all([
+  const [plan, subscriptionResult, usageResult] = await Promise.all([
+    getWeeklyPlan(),
     pool.query<{
       plan_code: string;
       ends_at: Date;
@@ -137,7 +205,7 @@ export async function getEntitlements(userId: string): Promise<Entitlements> {
       usedToday,
       remainingToday: null,
       usageDate,
-      weeklyPriceThb: WEEKLY_PLAN_PRICE_THB,
+      weeklyPriceThb: plan.priceThb,
     };
   }
 
@@ -150,7 +218,7 @@ export async function getEntitlements(userId: string): Promise<Entitlements> {
     usedToday,
     remainingToday: Math.max(0, FREE_DAILY_ANALYSIS_LIMIT - usedToday),
     usageDate,
-    weeklyPriceThb: WEEKLY_PLAN_PRICE_THB,
+    weeklyPriceThb: plan.priceThb,
   };
 }
 
@@ -204,7 +272,7 @@ export async function authorizeAnalysis(
         ok: false,
         status: 403,
         code: 'PREMIUM_MODEL_REQUIRED',
-        message: `โมเดลที่เลือกบางรายการเป็น Premium กรุณาอัปเกรดแพ็กเกจ ${WEEKLY_PLAN_PRICE_LABEL} บาท / 7 วัน`,
+        message: `โมเดลที่เลือกบางรายการเป็น Premium กรุณาอัปเกรดแพ็กเกจ ${planPriceLabel(entitlements.weeklyPriceThb)} บาท`,
         entitlements,
         lockedModels,
       };
@@ -256,7 +324,7 @@ export async function authorizeAnalysis(
       ok: false,
       status: 429,
       code: 'DAILY_LIMIT_REACHED',
-      message: `โควตาวิเคราะห์ฟรีครบ 10 ครั้งสำหรับวันนี้แล้ว กรุณากลับมาใหม่พรุ่งนี้หรืออัปเกรด Premium ${WEEKLY_PLAN_PRICE_LABEL} บาท / 7 วัน`,
+      message: `โควตาวิเคราะห์ฟรีครบ 10 ครั้งสำหรับวันนี้แล้ว กรุณากลับมาใหม่พรุ่งนี้หรืออัปเกรด Premium ${planPriceLabel(entitlements.weeklyPriceThb)} บาท`,
       entitlements: {
         ...entitlements,
         usedToday: FREE_DAILY_ANALYSIS_LIMIT,
