@@ -34,12 +34,13 @@ The application requires a signed-in account.
 
 ### Premium Weekly
 
-- Price is configurable by environment; default is 59.00 THB.
-- 7 days from verified payment time.
+- Price and duration are stored in PostgreSQL `membership_plans`.
+- Initial seed is 59.00 THB / 7 days.
+- Authorized admins can change price/duration from `/billing` without redeploying.
 - All 13 analysis models unlocked.
 - Unlimited analysis operations while the subscription is active.
 
-Payment orders and subscriptions are stored in PostgreSQL. Bank-slip verification is performed server-to-server through AMS Payment Gateway. The AMS API key must never be exposed to the browser.
+Payment orders and subscriptions are stored in PostgreSQL. The primary Stripe flow is AMS Hosted Checkout. MCDA never receives or stores Stripe API keys, Stripe.js publishable keys, or Stripe webhook secrets.
 
 ## Payment configuration
 
@@ -49,44 +50,60 @@ Required production environment variables:
 AMS_GATEWAY_BASE_URL=https://ams-gateway.micro-support.com
 AMS_GATEWAY_API_KEY=ams_...
 AMS_SERVICE_CODE=<assigned-service-code>
+AMS_STRIPE_PAYMENT_METHODS=card,promptpay
 
-# Premium Weekly price in THB. Defaults to 59.00 if omitted.
-MCDA_PREMIUM_WEEKLY_PRICE_THB=59.00
-
-# Choose one PromptPay proxy type: phone or national_id
-MCDA_PROMPTPAY_TYPE=national_id
-MCDA_PROMPTPAY_ID=<13-digit-national-id-or-tax-id>
+# Accounts allowed to edit Premium price/duration from /billing
+MCDA_ADMIN_EMAILS=admin@example.com
 ```
 
-`MCDA_PREMIUM_WEEKLY_PRICE_THB` accepts a positive THB amount with up to 2 decimal places, for example `1.00`, `49`, `59.00`, or `79.50`. After the service is redeployed/restarted, new payment orders use the current environment price. Any still-unpaid, non-expired order whose amount no longer matches the configured price is retired as `superseded` and is not reused; the next payment action creates a fresh order and QR with the current price.
+MCDA **must not** be configured with `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, or `STRIPE_WEBHOOK_SECRET`.
 
-For a mobile-number PromptPay receiver use:
+### AMS Hosted Checkout flow
+
+```text
+MCDA backend -> AMS Gateway -> Stripe Checkout
+Customer     -> redirect to checkout_url
+Stripe       -> AMS Stripe webhook
+AMS Gateway  -> relay webhook -> MCDA /api/webhooks/ams
+```
+
+MCDA creates the local order first, then calls:
+
+```text
+POST /api/v1/payments/stripe/checkout-sessions
+```
+
+with the server-side amount/currency, order reference, allowed methods, success URL and cancel URL. AMS returns a Stripe `checkout_url`; MCDA redirects the browser to that URL. Returning to the success URL is never treated as proof of payment. Premium is activated only after MCDA receives the matching `payment_intent.succeeded` event through the AMS webhook relay.
+
+The AMS service must have Stripe enabled, the `payments:create` scope, the correct source-IP allowlist, and a default client webhook endpoint configured as:
+
+```text
+https://<mcda-domain>/api/webhooks/ams
+```
+
+The relay is deduplicated using the Stripe event ID. MCDA also verifies the service metadata, external order reference, amount and currency before changing an order to paid.
+
+### Direct PromptPay + slip fallback
+
+The existing Standard Thai PromptPay QR + AMS/EasySlip verification remains available as a fallback payment path.
+
+Preferred PromptPay receiver configuration:
 
 ```env
 MCDA_PROMPTPAY_TYPE=phone
 MCDA_PROMPTPAY_ID=0836777796
 ```
 
-For a National ID / Tax ID PromptPay receiver use:
+or:
 
 ```env
 MCDA_PROMPTPAY_TYPE=national_id
 MCDA_PROMPTPAY_ID=1234567890123
 ```
 
-`MCDA_PROMPTPAY_ID` is server-side only and must not be exposed through a `NEXT_PUBLIC_*` variable. The billing API returns only a masked PromptPay identifier to the browser.
+`MCDA_PROMPTPAY_ID` is server-side only. The billing API returns only a masked PromptPay identifier to the browser. The order amount and reference are created server-side and reused during AMS slip verification.
 
-The standard Thai PromptPay Tag 29 generator supports:
-
-- mobile number via PromptPay sub-tag `01`
-- National ID / Tax ID via PromptPay sub-tag `02`
-- MCDA order reference embedded in Additional Data Field Template `62`, sub-tag `05`
-
-The amount stored on each payment order is encoded into the QR and is also used as the expected amount for AMS slip verification. The order reference is generated server-side and included in the QR. Payment acceptance remains server-side through the selected payment order, expected amount/currency, AMS verification result, duplicate status, and provider transaction reference uniqueness.
-
-Backward-compatible variables `MCDA_PROMPTPAY_PHONE` and `MCDA_PROMPTPAY_NATIONAL_ID` are also accepted, but the preferred configuration is `MCDA_PROMPTPAY_TYPE` + `MCDA_PROMPTPAY_ID`.
-
-See `docs/PROMPTPAY_QR_IMPLEMENTATION.md` for payload details.
+See `docs/PROMPTPAY_QR_IMPLEMENTATION.md` for the fallback QR payload details.
 
 ## Local development
 
