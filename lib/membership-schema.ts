@@ -51,11 +51,16 @@ export function ensureMembershipSchema() {
           ADD COLUMN IF NOT EXISTS plan_duration_days INTEGER,
           ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32),
           ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT,
+          ADD COLUMN IF NOT EXISTS stripe_checkout_session_id TEXT,
           ADD COLUMN IF NOT EXISTS ams_payment_id TEXT;
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_stripe_intent
           ON payment_orders (stripe_payment_intent_id)
           WHERE stripe_payment_intent_id IS NOT NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_checkout_session
+          ON payment_orders (stripe_checkout_session_id)
+          WHERE stripe_checkout_session_id IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS payment_events (
           event_id TEXT PRIMARY KEY,
