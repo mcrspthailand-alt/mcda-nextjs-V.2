@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react';
 import Link from 'next/link';
-import { loadStripe, type Stripe, type StripeElements } from '@stripe/stripe-js';
 
 type Entitlements = {
   plan: 'free' | 'premium';
@@ -46,13 +45,6 @@ type BillingState = {
   };
   stripeEnabled: boolean;
   canManagePlan: boolean;
-};
-
-type StripeCheckout = {
-  orderId: string;
-  clientSecret: string;
-  publishableKey: string;
-  paymentIntentId: string;
 };
 
 type VerificationFeedback = {
@@ -110,94 +102,6 @@ function verificationErrorMessage(
   return (code && messages[code]) || fallback || 'ตรวจสอบสลิปไม่สำเร็จ กรุณาลองอีกครั้ง';
 }
 
-function StripePaymentForm({
-  checkout,
-  amount,
-  onSubmitted,
-}: {
-  checkout: StripeCheckout;
-  amount: string;
-  onSubmitted: () => void;
-}) {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const sdkRef = useRef<{ stripe: Stripe; elements: StripeElements } | null>(null);
-  const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState('');
-
-  useEffect(() => {
-    let disposed = false;
-    let destroy: (() => void) | undefined;
-
-    void loadStripe(checkout.publishableKey)
-      .then((stripe) => {
-        if (disposed || !mountRef.current || !stripe) {
-          if (!disposed && !stripe) setFeedback('ไม่สามารถโหลด Stripe ได้');
-          return;
-        }
-        const elements = stripe.elements({
-          clientSecret: checkout.clientSecret,
-          locale: 'th',
-          appearance: { theme: 'stripe' },
-        });
-        const paymentElement = elements.create('payment', { layout: 'tabs' });
-        paymentElement.on('ready', () => {
-          if (!disposed) setReady(true);
-        });
-        paymentElement.on('loaderror', () => {
-          if (!disposed) setFeedback('โหลดแบบฟอร์ม Stripe ไม่สำเร็จ กรุณาลองใหม่');
-        });
-        paymentElement.mount(mountRef.current);
-        sdkRef.current = { stripe, elements };
-        destroy = () => paymentElement.destroy();
-      })
-      .catch(() => {
-        if (!disposed) setFeedback('เชื่อมต่อ Stripe ไม่สำเร็จ');
-      });
-
-    return () => {
-      disposed = true;
-      sdkRef.current = null;
-      destroy?.();
-    };
-  }, [checkout.clientSecret, checkout.publishableKey]);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!sdkRef.current || busy) return;
-    setBusy(true);
-    setFeedback('');
-    try {
-      const { error } = await sdkRef.current.stripe.confirmPayment({
-        elements: sdkRef.current.elements,
-        confirmParams: { return_url: `${window.location.origin}/billing` },
-        redirect: 'if_required',
-      });
-      if (error) {
-        setFeedback(error.message || 'ชำระเงินไม่สำเร็จ กรุณาตรวจสอบข้อมูล');
-      } else {
-        setFeedback('ส่งข้อมูลการชำระเงินแล้ว กำลังรอ Stripe ยืนยันสถานะ…');
-        onSubmitted();
-      }
-    } catch {
-      setFeedback('การเชื่อมต่อขัดข้อง กรุณาตรวจสอบสถานะ Order เดิมก่อนลองใหม่');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit} style={{ marginTop: 16 }}>
-      <div ref={mountRef} />
-      {feedback ? <div style={styles.message}>{feedback}</div> : null}
-      <button type="submit" disabled={!ready || busy} style={styles.primaryButton}>
-        {busy ? 'กำลังดำเนินการ…' : `ยืนยันชำระ ${formatThb(amount, true)} บาท ผ่าน Stripe`}
-      </button>
-      <div style={styles.muted}>ข้อมูลบัตรถูกส่งตรงให้ Stripe ระบบ MCDA ไม่รับหรือเก็บเลขบัตร</div>
-    </form>
-  );
-}
-
 export default function BillingPage() {
   const [state, setState] = useState<BillingState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -206,7 +110,7 @@ export default function BillingPage() {
   const [slip, setSlip] = useState<File | null>(null);
   const [message, setMessage] = useState('');
   const [verificationFeedback, setVerificationFeedback] = useState<VerificationFeedback>(null);
-  const [stripeCheckout, setStripeCheckout] = useState<StripeCheckout | null>(null);
+  const [checkoutReturn, setCheckoutReturn] = useState<'success' | 'cancel' | null>(null);
   const [savingPlan, setSavingPlan] = useState(false);
 
   const orderPayable = useMemo(
@@ -247,28 +151,46 @@ export default function BillingPage() {
   }
 
   useEffect(() => {
+    const checkout = new URLSearchParams(window.location.search).get('checkout');
+    if (checkout === 'success' || checkout === 'cancel') {
+      setCheckoutReturn(checkout);
+      setMessage(
+        checkout === 'success'
+          ? 'กลับจากหน้าชำระเงินแล้ว กำลังรอ AMS webhook ยืนยันสถานะ…'
+          : 'ยกเลิกการชำระเงินแล้ว คุณสามารถใช้ Order เดิมเพื่อชำระใหม่ได้',
+      );
+      window.history.replaceState(null, '', '/billing');
+    }
     void loadBilling();
   }, []);
 
   useEffect(() => {
-    if (!stripeCheckout || state?.entitlements.plan === 'premium') return;
+    if (checkoutReturn !== 'success' || state?.entitlements.plan === 'premium') return;
+    let attempts = 0;
     const timer = window.setInterval(async () => {
+      attempts += 1;
       try {
         const response = await fetch('/api/billing/orders', { cache: 'no-store' });
         const data = await response.json();
-        if (!response.ok) return;
-        setState(data);
-        if (data?.entitlements?.plan === 'premium') {
-          setMessage('ชำระเงินสำเร็จ เปิดใช้งาน Premium แล้ว');
-          setStripeCheckout(null);
-          window.dispatchEvent(new Event('mcda-entitlements-refresh'));
+        if (response.ok) {
+          setState(data);
+          if (data?.entitlements?.plan === 'premium') {
+            setMessage('ชำระเงินสำเร็จ เปิดใช้งาน Premium แล้ว');
+            setCheckoutReturn(null);
+            window.dispatchEvent(new Event('mcda-entitlements-refresh'));
+            window.clearInterval(timer);
+          }
         }
       } catch {
-        // Keep the last known status while waiting for the signed webhook.
+        // AMS webhook is authoritative; keep the last known state and retry briefly.
+      }
+      if (attempts >= 40) {
+        window.clearInterval(timer);
+        setMessage('ยังไม่ได้รับผลยืนยันจาก AMS กรุณากดตรวจสอบสถานะอีกครั้งภายหลัง');
       }
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [stripeCheckout, state?.entitlements.plan]);
+  }, [checkoutReturn, state?.entitlements.plan]);
 
 
   async function createOrder(): Promise<PaymentOrder | null> {
@@ -290,7 +212,7 @@ export default function BillingPage() {
     }
   }
 
-  async function startStripeCheckout() {
+  async function startHostedCheckout() {
     setCreating(true);
     setMessage('');
     setVerificationFeedback(null);
@@ -302,18 +224,17 @@ export default function BillingPage() {
       }
       setState(orderData);
 
-      const stripeResponse = await fetch(`/api/billing/orders/${orderData.order.id}/stripe`, {
+      const checkoutResponse = await fetch(`/api/billing/orders/${orderData.order.id}/checkout`, {
         method: 'POST',
       });
-      const stripeData = await stripeResponse.json();
-      if (!stripeResponse.ok) {
-        throw new Error(stripeData?.error?.message || 'เริ่ม Stripe checkout ไม่สำเร็จ');
+      const checkoutData = await checkoutResponse.json();
+      if (!checkoutResponse.ok || typeof checkoutData?.checkoutUrl !== 'string') {
+        throw new Error(checkoutData?.error?.message || 'เปิดหน้าชำระเงินไม่สำเร็จ');
       }
-      setStripeCheckout(stripeData);
-      setMessage('สร้าง Stripe PaymentIntent แล้ว เลือก Card หรือ PromptPay ด้านล่างเพื่อชำระเงิน');
+
+      window.location.assign(checkoutData.checkoutUrl);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'เริ่ม Stripe checkout ไม่สำเร็จ');
-    } finally {
+      setMessage(error instanceof Error ? error.message : 'เปิดหน้าชำระเงินไม่สำเร็จ');
       setCreating(false);
     }
   }
@@ -334,7 +255,6 @@ export default function BillingPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error?.message || 'บันทึกแพ็กเกจไม่สำเร็จ');
-      setStripeCheckout(null);
       await loadBilling();
       setMessage(`อัปเดต Premium เป็น ${formatThb(data.plan.priceThb)} บาท / ${data.plan.durationDays} วันแล้ว`);
     } catch (error) {
@@ -456,8 +376,8 @@ export default function BillingPage() {
           ) : (
             <div>
               {state?.stripeEnabled ? (
-                <button type="button" onClick={startStripeCheckout} disabled={creating} style={styles.primaryButton}>
-                  {creating ? 'กำลังสร้างรายการ…' : `ชำระผ่าน Stripe ${planPriceLabel} บาท / Premium ${planDays} วัน`}
+                <button type="button" onClick={startHostedCheckout} disabled={creating} style={styles.primaryButton}>
+                  {creating ? 'กำลังเปิดหน้าชำระเงิน…' : `ชำระ Card / PromptPay ${planPriceLabel} บาท / Premium ${planDays} วัน`}
                 </button>
               ) : (
                 <button type="button" onClick={() => void createOrder()} disabled={creating} style={styles.primaryButton}>
@@ -503,19 +423,16 @@ export default function BillingPage() {
 
           {state.stripeEnabled && orderPayable ? (
             <div style={{ marginBottom: 18, paddingBottom: 18, borderBottom: '1px solid #edf0f5' }}>
-              <h3 style={{ margin: '0 0 4px' }}>ชำระผ่าน Stripe</h3>
-              <div style={styles.muted}>รองรับ Card และ PromptPay ตามสิทธิ์ที่เปิดใน AMS/Stripe</div>
-              {stripeCheckout?.orderId === state.order.id ? (
-                <StripePaymentForm
-                  checkout={stripeCheckout}
-                  amount={state.order.amount}
-                  onSubmitted={() => setMessage('กำลังรอ Stripe webhook ยืนยันการชำระเงิน…')}
-                />
-              ) : (
-                <button type="button" onClick={startStripeCheckout} disabled={creating} style={styles.primaryButton}>
-                  {creating ? 'กำลังเชื่อมต่อ Stripe…' : 'เปิด Stripe Payment Element'}
-                </button>
-              )}
+              <h3 style={{ margin: '0 0 4px' }}>ชำระผ่าน AMS Hosted Checkout</h3>
+              <div style={styles.muted}>
+                ระบบจะพาไปหน้าชำระเงินของ Stripe ผ่าน AMS Gateway รองรับ Card และ PromptPay ตามสิทธิ์ที่เปิดใช้งาน
+              </div>
+              <button type="button" onClick={startHostedCheckout} disabled={creating} style={styles.primaryButton}>
+                {creating ? 'กำลังเปิดหน้าชำระเงิน…' : 'ไปหน้าชำระเงิน Card / PromptPay'}
+              </button>
+              <div style={styles.muted}>
+                การกลับจากหน้าชำระเงินยังไม่ถือว่าจ่ายสำเร็จ ระบบจะเปิด Premium หลังได้รับ webhook จาก AMS เท่านั้น
+              </div>
             </div>
           ) : null}
 
@@ -602,7 +519,7 @@ export default function BillingPage() {
       ) : null}
 
       <section style={styles.note}>
-        QR นี้เป็น Standard Thai PromptPay Tag 29 รองรับทั้งเบอร์มือถือและเลขบัตรประชาชน/เลขประจำตัวผู้เสียภาษี และฝังยอดตามราคาของ Order ({orderAmountMoney} บาท) โดยตรง การยืนยันการชำระเงินยังทำจากข้อมูลฝั่ง Server เท่านั้น และ Premium จะเริ่มนับ {planDays} วันจากเวลาที่การชำระเงินได้รับการยืนยันสำเร็จ
+        ช่องทางหลักใช้ AMS Hosted Checkout: MCDA ส่ง Order ไป AMS, AMS สร้าง Stripe Checkout และ redirect ผู้ใช้ไปชำระเงิน จากนั้น Stripe ส่ง webhook เข้า AMS และ AMS relay กลับ MCDA เพื่อเปิด Premium ส่วน Standard Thai PromptPay QR + อัปโหลดสลิปยังคงเป็นช่องทางสำรอง
       </section>
     </main>
   );

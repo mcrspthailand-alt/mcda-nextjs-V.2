@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { getRequestUser } from '@/lib/request-user';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
-import { createStripePaymentIntentWithAms, getAmsService } from '@/lib/ams-gateway';
+import { createHostedCheckoutWithAms, getAmsService } from '@/lib/ams-gateway';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,22 +15,29 @@ type OrderRow = {
   currency: string;
   status: string;
   expires_at: Date;
-  stripe_payment_intent_id: string | null;
+  stripe_checkout_session_id: string | null;
   ams_payment_id: string | null;
 };
 
-function numericEqual(a: unknown, b: unknown) {
-  const left = Number(a);
-  const right = Number(b);
-  return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 0.005;
-}
+function appOrigin() {
+  const value = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim();
+  const url = new URL(value);
+  const local =
+    process.env.NODE_ENV !== 'production' &&
+    url.protocol === 'http:' &&
+    ['localhost', '127.0.0.1'].includes(url.hostname);
 
-function stripePublishableKey() {
-  const key = (process.env.STRIPE_PUBLISHABLE_KEY ?? '').trim();
-  if (!/^pk_(test|live)_[A-Za-z0-9]+$/.test(key)) {
-    throw new Error('STRIPE_PUBLISHABLE_KEY is not configured');
+  if (
+    (!local && url.protocol !== 'https:') ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.pathname !== '/'
+  ) {
+    throw new Error('NEXT_PUBLIC_APP_URL must be an HTTPS origin');
   }
-  return key;
+  return url.origin;
 }
 
 function stripeMethods(): Array<'card' | 'promptpay'> {
@@ -39,6 +46,15 @@ function stripeMethods(): Array<'card' | 'promptpay'> {
     .map((value) => value.trim().toLowerCase())
     .filter((value): value is 'card' | 'promptpay' => value === 'card' || value === 'promptpay');
   return configured.length ? [...new Set(configured)] : ['card', 'promptpay'];
+}
+
+function validCheckoutUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'checkout.stripe.com';
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(
@@ -54,7 +70,6 @@ export async function POST(
   }
 
   try {
-    const publishableKey = stripePublishableKey();
     const serviceCode = (process.env.AMS_SERVICE_CODE ?? '').trim();
     if (!serviceCode) throw new Error('AMS_SERVICE_CODE is not configured');
 
@@ -65,7 +80,7 @@ export async function POST(
       `
         SELECT
           id, user_id, external_reference, amount::text, currency, status,
-          expires_at, stripe_payment_intent_id, ams_payment_id
+          expires_at, stripe_checkout_session_id, ams_payment_id
         FROM payment_orders
         WHERE id = $1 AND user_id = $2
         LIMIT 1
@@ -88,7 +103,10 @@ export async function POST(
       );
     }
 
-    if (!['awaiting_payment', 'processing'].includes(order.status) || new Date(order.expires_at).getTime() <= Date.now()) {
+    if (
+      !['awaiting_payment', 'processing'].includes(order.status) ||
+      new Date(order.expires_at).getTime() <= Date.now()
+    ) {
       return NextResponse.json(
         { error: { code: 'ORDER_NOT_PAYABLE', message: 'รายการนี้ไม่อยู่ในสถานะที่รับชำระได้' } },
         { status: 409 },
@@ -114,22 +132,26 @@ export async function POST(
       );
     }
 
-    const gateway = await createStripePaymentIntentWithAms({
+    const origin = appOrigin();
+    const gateway = await createHostedCheckoutWithAms({
       amount: order.amount,
       currency: 'THB',
       externalReference: order.external_reference,
       description: `MCDA Premium ${order.external_reference}`,
-      idempotencyKey: `${order.id}-stripe-intent-v1`,
+      idempotencyKey: `${order.id}-stripe-checkout-v1`,
       paymentMethodTypes: stripeMethods(),
+      successUrl: `${origin}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${origin}/billing?checkout=cancel&order_id=${encodeURIComponent(order.external_reference)}`,
+      webhookUrl: `${origin}/api/webhooks/ams`,
     });
 
-    const intent = gateway.body.data;
-    if (!gateway.ok || !intent) {
+    const checkout = gateway.body.data;
+    if (!gateway.ok || !checkout) {
       return NextResponse.json(
         {
           error: {
-            code: gateway.body.error?.code || 'STRIPE_INTENT_FAILED',
-            message: gateway.body.error?.message || 'ไม่สามารถสร้าง Stripe PaymentIntent ได้',
+            code: gateway.body.error?.code || 'STRIPE_CHECKOUT_FAILED',
+            message: gateway.body.error?.message || 'ไม่สามารถสร้าง Stripe Checkout Session ได้',
           },
         },
         { status: gateway.status >= 400 && gateway.status < 600 ? gateway.status : 502 },
@@ -137,18 +159,17 @@ export async function POST(
     }
 
     if (
-      intent.provider !== 'stripe' ||
-      typeof intent.payment_intent_id !== 'string' ||
-      typeof intent.client_secret !== 'string' ||
-      !numericEqual(intent.amount, order.amount) ||
-      String(intent.currency ?? '').toUpperCase() !== order.currency ||
-      intent.external_reference !== order.external_reference
+      checkout.provider !== 'stripe' ||
+      typeof checkout.checkout_session_id !== 'string' ||
+      typeof checkout.checkout_url !== 'string' ||
+      !validCheckoutUrl(checkout.checkout_url) ||
+      checkout.external_reference !== order.external_reference
     ) {
       return NextResponse.json(
         {
           error: {
-            code: 'STRIPE_INTENT_MISMATCH',
-            message: 'ข้อมูล PaymentIntent ที่ AMS ส่งกลับมาไม่ตรงกับ Order',
+            code: 'STRIPE_CHECKOUT_MISMATCH',
+            message: 'ข้อมูล Hosted Checkout ที่ AMS ส่งกลับมาไม่ตรงกับ Order',
           },
         },
         { status: 502 },
@@ -159,31 +180,30 @@ export async function POST(
       `
         UPDATE payment_orders
         SET provider = 'stripe',
-            payment_method = 'stripe',
-            stripe_payment_intent_id = $2,
+            payment_method = 'stripe_hosted_checkout',
+            stripe_checkout_session_id = $2,
             ams_payment_id = $3,
             updated_at = NOW()
         WHERE id = $1 AND user_id = $4
       `,
-      [order.id, intent.payment_intent_id, intent.payment_id ?? null, user.id],
+      [order.id, checkout.checkout_session_id, checkout.payment_id ?? null, user.id],
     );
 
     return NextResponse.json(
       {
         orderId: order.id,
-        clientSecret: intent.client_secret,
-        publishableKey,
-        paymentIntentId: intent.payment_intent_id,
+        checkoutSessionId: checkout.checkout_session_id,
+        checkoutUrl: checkout.checkout_url,
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    console.error('Unable to start AMS Stripe checkout', error);
+    console.error('Unable to start AMS Hosted Checkout', error);
     return NextResponse.json(
       {
         error: {
           code: 'STRIPE_CHECKOUT_UNAVAILABLE',
-          message: 'ยังไม่สามารถเริ่ม Stripe checkout ได้ กรุณาลองใหม่หรือลองชำระผ่าน PromptPay',
+          message: 'ยังไม่สามารถเปิดหน้าชำระเงินผ่าน AMS/Stripe ได้ กรุณาลองใหม่หรือลอง PromptPay',
         },
       },
       { status: 503 },
