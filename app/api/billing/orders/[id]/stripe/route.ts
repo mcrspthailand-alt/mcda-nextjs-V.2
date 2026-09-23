@@ -33,6 +33,15 @@ function stripePublishableKey() {
   return key;
 }
 
+function appOrigin() {
+  const value = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim();
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+    throw new Error('NEXT_PUBLIC_APP_URL must be an HTTPS origin');
+  }
+  return url.origin;
+}
+
 function stripeMethods(): Array<'card' | 'promptpay'> {
   const configured = (process.env.AMS_STRIPE_PAYMENT_METHODS ?? 'card,promptpay')
     .split(',')
@@ -121,6 +130,7 @@ export async function POST(
       description: `MCDA Premium ${order.external_reference}`,
       idempotencyKey: `${order.id}-stripe-intent-v1`,
       paymentMethodTypes: stripeMethods(),
+      webhookUrl: `${appOrigin()}/api/webhooks/ams`,
     });
 
     const intent = gateway.body.data;
