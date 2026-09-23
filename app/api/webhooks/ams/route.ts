@@ -87,14 +87,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const expectedLive = (process.env.STRIPE_PUBLISHABLE_KEY ?? '').startsWith('pk_live_');
-  if (event.livemode !== expectedLive) {
-    return NextResponse.json(
-      { error: { code: 'STRIPE_MODE_MISMATCH', message: 'Stripe test/live mode mismatch' } },
-      { status: 422 },
-    );
-  }
-
   await ensureMembershipSchema();
   const pool = getPool();
   const lookup = await pool.query<OrderRow>(
@@ -142,9 +134,9 @@ export async function POST(request: NextRequest) {
   try {
     await client.query('BEGIN');
 
-    // Stripe event ID is the primary idempotency identity. The AMS delivery ID is
-    // useful for logs/operations but AMS may redeliver the same Stripe event using
-    // a different delivery ID.
+      // Stripe event ID is the primary idempotency identity. AMS already verifies
+    // the Stripe signature and may redeliver the same Stripe event with another
+    // delivery ID, so event.id prevents duplicate entitlement changes.
     const eventInsert = await client.query(
       `
         INSERT INTO payment_events (event_id, order_id, event_type)
@@ -190,7 +182,7 @@ export async function POST(request: NextRequest) {
             UPDATE payment_orders
             SET status = 'paid',
                 provider = 'stripe',
-                payment_method = 'stripe',
+                payment_method = 'stripe_hosted_checkout',
                 stripe_payment_intent_id = $2,
                 provider_reference = $2,
                 verification_id = $3,
@@ -237,7 +229,7 @@ export async function POST(request: NextRequest) {
           UPDATE payment_orders
           SET status = $2,
               provider = 'stripe',
-              payment_method = 'stripe',
+              payment_method = 'stripe_hosted_checkout',
               stripe_payment_intent_id = COALESCE(stripe_payment_intent_id, $3),
               updated_at = NOW()
           WHERE id = $1
