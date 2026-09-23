@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { getRequestUser } from '@/lib/request-user';
@@ -133,16 +134,39 @@ export async function POST(
     }
 
     const origin = appOrigin();
+    const paymentMethodTypes = stripeMethods();
+    const description = `MCDA Premium ${order.external_reference}`;
+    const successUrl = `${origin}/billing?checkout=success&order_id=${encodeURIComponent(order.external_reference)}`;
+    const cancelUrl = `${origin}/billing?checkout=cancel&order_id=${encodeURIComponent(order.external_reference)}`;
+    const webhookUrl = `${origin}/api/webhooks/ams`;
+
+    // AMS requires the same Idempotency-Key only when retrying the exact same
+    // mutation payload. If callback URLs/methods change, use a new stable key.
+    const checkoutFingerprint = createHash('sha256')
+      .update(JSON.stringify({
+        amount: order.amount,
+        currency: 'THB',
+        external_reference: order.external_reference,
+        description,
+        payment_method_types: paymentMethodTypes,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        webhook_url: webhookUrl,
+      }))
+      .digest('hex')
+      .slice(0, 20);
+    const idempotencyKey = `${order.id}-stripe-checkout-${checkoutFingerprint}`;
+
     const gateway = await createHostedCheckoutWithAms({
       amount: order.amount,
       currency: 'THB',
       externalReference: order.external_reference,
-      description: `MCDA Premium ${order.external_reference}`,
-      idempotencyKey: `${order.id}-stripe-checkout-v1`,
-      paymentMethodTypes: stripeMethods(),
-      successUrl: `${origin}/billing?checkout=success&order_id=${encodeURIComponent(order.external_reference)}`,
-      cancelUrl: `${origin}/billing?checkout=cancel&order_id=${encodeURIComponent(order.external_reference)}`,
-      webhookUrl: `${origin}/api/webhooks/ams`,
+      description,
+      idempotencyKey,
+      paymentMethodTypes,
+      successUrl,
+      cancelUrl,
+      webhookUrl,
     });
 
     const checkout = gateway.body.data;
