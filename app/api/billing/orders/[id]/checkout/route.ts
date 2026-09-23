@@ -142,6 +142,7 @@ export async function POST(
       paymentMethodTypes: stripeMethods(),
       successUrl: `${origin}/billing?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${origin}/billing?checkout=cancel&order_id=${encodeURIComponent(order.external_reference)}`,
+      webhookUrl: `${origin}/api/webhooks/ams`,
     });
 
     const checkout = gateway.body.data;
