@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import Link from 'next/link';
+import { loadStripe, type Stripe, type StripeElements } from '@stripe/stripe-js';
 
 type Entitlements = {
   plan: 'free' | 'premium';
@@ -43,6 +44,15 @@ type BillingState = {
     durationDays: number;
     title: string;
   };
+  stripeEnabled: boolean;
+  canManagePlan: boolean;
+};
+
+type StripeCheckout = {
+  orderId: string;
+  clientSecret: string;
+  publishableKey: string;
+  paymentIntentId: string;
 };
 
 type VerificationFeedback = {
@@ -100,6 +110,94 @@ function verificationErrorMessage(
   return (code && messages[code]) || fallback || 'ตรวจสอบสลิปไม่สำเร็จ กรุณาลองอีกครั้ง';
 }
 
+function StripePaymentForm({
+  checkout,
+  amount,
+  onSubmitted,
+}: {
+  checkout: StripeCheckout;
+  amount: string;
+  onSubmitted: () => void;
+}) {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const sdkRef = useRef<{ stripe: Stripe; elements: StripeElements } | null>(null);
+  const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  useEffect(() => {
+    let disposed = false;
+    let destroy: (() => void) | undefined;
+
+    void loadStripe(checkout.publishableKey)
+      .then((stripe) => {
+        if (disposed || !mountRef.current || !stripe) {
+          if (!disposed && !stripe) setFeedback('ไม่สามารถโหลด Stripe ได้');
+          return;
+        }
+        const elements = stripe.elements({
+          clientSecret: checkout.clientSecret,
+          locale: 'th',
+          appearance: { theme: 'stripe' },
+        });
+        const paymentElement = elements.create('payment', { layout: 'tabs' });
+        paymentElement.on('ready', () => {
+          if (!disposed) setReady(true);
+        });
+        paymentElement.on('loaderror', () => {
+          if (!disposed) setFeedback('โหลดแบบฟอร์ม Stripe ไม่สำเร็จ กรุณาลองใหม่');
+        });
+        paymentElement.mount(mountRef.current);
+        sdkRef.current = { stripe, elements };
+        destroy = () => paymentElement.destroy();
+      })
+      .catch(() => {
+        if (!disposed) setFeedback('เชื่อมต่อ Stripe ไม่สำเร็จ');
+      });
+
+    return () => {
+      disposed = true;
+      sdkRef.current = null;
+      destroy?.();
+    };
+  }, [checkout.clientSecret, checkout.publishableKey]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!sdkRef.current || busy) return;
+    setBusy(true);
+    setFeedback('');
+    try {
+      const { error } = await sdkRef.current.stripe.confirmPayment({
+        elements: sdkRef.current.elements,
+        confirmParams: { return_url: `${window.location.origin}/billing` },
+        redirect: 'if_required',
+      });
+      if (error) {
+        setFeedback(error.message || 'ชำระเงินไม่สำเร็จ กรุณาตรวจสอบข้อมูล');
+      } else {
+        setFeedback('ส่งข้อมูลการชำระเงินแล้ว กำลังรอ Stripe ยืนยันสถานะ…');
+        onSubmitted();
+      }
+    } catch {
+      setFeedback('การเชื่อมต่อขัดข้อง กรุณาตรวจสอบสถานะ Order เดิมก่อนลองใหม่');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ marginTop: 16 }}>
+      <div ref={mountRef} />
+      {feedback ? <div style={styles.message}>{feedback}</div> : null}
+      <button type="submit" disabled={!ready || busy} style={styles.primaryButton}>
+        {busy ? 'กำลังดำเนินการ…' : `ยืนยันชำระ ${formatThb(amount, true)} บาท ผ่าน Stripe`}
+      </button>
+      <div style={styles.muted}>ข้อมูลบัตรถูกส่งตรงให้ Stripe ระบบ MCDA ไม่รับหรือเก็บเลขบัตร</div>
+    </form>
+  );
+}
+
 export default function BillingPage() {
   const [state, setState] = useState<BillingState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,6 +206,8 @@ export default function BillingPage() {
   const [slip, setSlip] = useState<File | null>(null);
   const [message, setMessage] = useState('');
   const [verificationFeedback, setVerificationFeedback] = useState<VerificationFeedback>(null);
+  const [stripeCheckout, setStripeCheckout] = useState<StripeCheckout | null>(null);
+  const [savingPlan, setSavingPlan] = useState(false);
 
   const orderPayable = useMemo(
     () =>
@@ -150,7 +250,28 @@ export default function BillingPage() {
     void loadBilling();
   }, []);
 
-  async function createOrder() {
+  useEffect(() => {
+    if (!stripeCheckout || state?.entitlements.plan === 'premium') return;
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetch('/api/billing/orders', { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok) return;
+        setState(data);
+        if (data?.entitlements?.plan === 'premium') {
+          setMessage('ชำระเงินสำเร็จ เปิดใช้งาน Premium แล้ว');
+          setStripeCheckout(null);
+          window.dispatchEvent(new Event('mcda-entitlements-refresh'));
+        }
+      } catch {
+        // Keep the last known status while waiting for the signed webhook.
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [stripeCheckout, state?.entitlements.plan]);
+
+
+  async function createOrder(): Promise<PaymentOrder | null> {
     setCreating(true);
     setMessage('');
     setVerificationFeedback(null);
@@ -160,10 +281,66 @@ export default function BillingPage() {
       if (!response.ok) throw new Error(data?.error?.message || 'สร้างรายการไม่สำเร็จ');
       setState(data);
       setMessage(`สร้างรายการชำระเงิน ${formatThb(data?.order?.amount ?? data?.plan?.priceThb)} บาทแล้ว`);
+      return data.order ?? null;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'สร้างรายการไม่สำเร็จ');
+      return null;
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function startStripeCheckout() {
+    setCreating(true);
+    setMessage('');
+    setVerificationFeedback(null);
+    try {
+      const orderResponse = await fetch('/api/billing/orders', { method: 'POST' });
+      const orderData = await orderResponse.json();
+      if (!orderResponse.ok || !orderData?.order?.id) {
+        throw new Error(orderData?.error?.message || 'สร้างรายการไม่สำเร็จ');
+      }
+      setState(orderData);
+
+      const stripeResponse = await fetch(`/api/billing/orders/${orderData.order.id}/stripe`, {
+        method: 'POST',
+      });
+      const stripeData = await stripeResponse.json();
+      if (!stripeResponse.ok) {
+        throw new Error(stripeData?.error?.message || 'เริ่ม Stripe checkout ไม่สำเร็จ');
+      }
+      setStripeCheckout(stripeData);
+      setMessage('สร้าง Stripe PaymentIntent แล้ว เลือก Card หรือ PromptPay ด้านล่างเพื่อชำระเงิน');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'เริ่ม Stripe checkout ไม่สำเร็จ');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function updatePlan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingPlan(true);
+    setMessage('');
+    const form = new FormData(event.currentTarget);
+    try {
+      const response = await fetch('/api/admin/membership-plan', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          priceThb: form.get('priceThb'),
+          durationDays: Number(form.get('durationDays')),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error?.message || 'บันทึกแพ็กเกจไม่สำเร็จ');
+      setStripeCheckout(null);
+      await loadBilling();
+      setMessage(`อัปเดต Premium เป็น ${formatThb(data.plan.priceThb)} บาท / ${data.plan.durationDays} วันแล้ว`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'บันทึกแพ็กเกจไม่สำเร็จ');
+    } finally {
+      setSavingPlan(false);
     }
   }
 
@@ -277,12 +454,41 @@ export default function BillingPage() {
               Premium ใช้งานอยู่ · สิ้นสุด {formatThaiDate(state.entitlements.premiumUntil)}
             </div>
           ) : (
-            <button type="button" onClick={createOrder} disabled={creating} style={styles.primaryButton}>
-              {creating ? 'กำลังสร้างรายการ…' : `ชำระ ${planPriceLabel} บาท / เปิด Premium ${planDays} วัน`}
-            </button>
+            <div>
+              {state?.stripeEnabled ? (
+                <button type="button" onClick={startStripeCheckout} disabled={creating} style={styles.primaryButton}>
+                  {creating ? 'กำลังสร้างรายการ…' : `ชำระผ่าน Stripe ${planPriceLabel} บาท / Premium ${planDays} วัน`}
+                </button>
+              ) : (
+                <button type="button" onClick={() => void createOrder()} disabled={creating} style={styles.primaryButton}>
+                  {creating ? 'กำลังสร้างรายการ…' : `ชำระ ${planPriceLabel} บาท / เปิด Premium ${planDays} วัน`}
+                </button>
+              )}
+            </div>
           )}
         </article>
       </section>
+
+      {state?.canManagePlan ? (
+        <section style={{ ...styles.card, marginBottom: 18 }}>
+          <span style={styles.premiumBadge}>ADMIN PRICING</span>
+          <h2 style={styles.planTitle}>กำหนดราคา Premium</h2>
+          <p style={styles.muted}>ราคาและระยะเวลาเก็บใน PostgreSQL เปลี่ยนได้โดยไม่ต้องแก้ Environment หรือ deploy ใหม่</p>
+          <form onSubmit={updatePlan} style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap', marginTop: 12 }}>
+            <label style={styles.fileLabel}>
+              ราคา (บาท)
+              <input name="priceThb" inputMode="decimal" defaultValue={state.plan.priceThb} required />
+            </label>
+            <label style={styles.fileLabel}>
+              ระยะเวลา (วัน)
+              <input name="durationDays" type="number" min={1} max={3650} defaultValue={state.plan.durationDays} required />
+            </label>
+            <button type="submit" disabled={savingPlan} style={styles.primaryButton}>
+              {savingPlan ? 'กำลังบันทึก…' : 'บันทึกราคาแพ็กเกจ'}
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       {state?.entitlements.plan !== 'premium' && state?.order ? (
         <section style={styles.card}>
@@ -294,6 +500,30 @@ export default function BillingPage() {
             </div>
             <div style={styles.orderStatus}>{state.order.status}</div>
           </div>
+
+          {state.stripeEnabled && orderPayable ? (
+            <div style={{ marginBottom: 18, paddingBottom: 18, borderBottom: '1px solid #edf0f5' }}>
+              <h3 style={{ margin: '0 0 4px' }}>ชำระผ่าน Stripe</h3>
+              <div style={styles.muted}>รองรับ Card และ PromptPay ตามสิทธิ์ที่เปิดใน AMS/Stripe</div>
+              {stripeCheckout?.orderId === state.order.id ? (
+                <StripePaymentForm
+                  checkout={stripeCheckout}
+                  amount={state.order.amount}
+                  onSubmitted={() => setMessage('กำลังรอ Stripe webhook ยืนยันการชำระเงิน…')}
+                />
+              ) : (
+                <button type="button" onClick={startStripeCheckout} disabled={creating} style={styles.primaryButton}>
+                  {creating ? 'กำลังเชื่อมต่อ Stripe…' : 'เปิด Stripe Payment Element'}
+                </button>
+              )}
+            </div>
+          ) : null}
+
+          {state.paymentConfigured && orderPayable ? (
+            <div style={{ marginBottom: 14, fontWeight: 800, color: '#667085' }}>
+              หรือชำระด้วย Standard PromptPay QR และอัปโหลดสลิปด้านล่าง
+            </div>
+          ) : null}
 
           {!state.paymentConfigured ? (
             <div style={styles.warning}>
@@ -364,7 +594,7 @@ export default function BillingPage() {
               </button>
             </div>
           ) : (
-            <button type="button" onClick={createOrder} disabled={creating} style={styles.primaryButton}>
+            <button type="button" onClick={() => void createOrder()} disabled={creating} style={styles.primaryButton}>
               สร้างรายการชำระเงินใหม่
             </button>
           )}
