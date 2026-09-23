@@ -162,7 +162,6 @@ export async function POST(
             payment_method = 'stripe',
             stripe_payment_intent_id = $2,
             ams_payment_id = $3,
-            status = CASE WHEN status = 'awaiting_payment' THEN 'processing' ELSE status END,
             updated_at = NOW()
         WHERE id = $1 AND user_id = $4
       `,
