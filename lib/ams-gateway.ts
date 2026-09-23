@@ -207,6 +207,7 @@ export async function createHostedCheckoutWithAms(input: {
   idempotencyKey: string;
   successUrl: string;
   cancelUrl: string;
+  webhookUrl: string;
   paymentMethodTypes?: Array<'card' | 'promptpay'>;
 }) {
   const requestId = randomUUID();
@@ -219,6 +220,7 @@ export async function createHostedCheckoutWithAms(input: {
     description: input.description,
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
+    webhook_url: input.webhookUrl,
   };
 
   paymentDebugLog('AMS HOSTED CHECKOUT REQUEST', {
