@@ -172,16 +172,14 @@ export type AmsServiceResponse = {
   error?: { code?: string; message?: string };
 };
 
-export type AmsStripeIntentResponse = {
+export type AmsHostedCheckoutResponse = {
   data?: {
     payment_id?: string;
     status?: string;
     provider?: string;
-    payment_intent_id?: string;
-    client_secret?: string;
-    amount?: string | number;
-    currency?: string;
-    payment_method_types?: string[];
+    checkout_session_id?: string;
+    checkout_url?: string;
+    payment_intent_id?: string | null;
     external_reference?: string;
   };
   error?: { code?: string; message?: string; provider_response?: unknown };
@@ -201,27 +199,29 @@ export async function getAmsService() {
   return { ok: response.ok, status: response.status, requestId, body };
 }
 
-export async function createStripePaymentIntentWithAms(input: {
+export async function createHostedCheckoutWithAms(input: {
   amount: string;
   currency: 'THB';
   externalReference: string;
   description: string;
   idempotencyKey: string;
+  successUrl: string;
+  cancelUrl: string;
   paymentMethodTypes?: Array<'card' | 'promptpay'>;
-  webhookUrl: string;
 }) {
   const requestId = randomUUID();
-  const endpoint = `${gatewayBaseUrl()}/api/v1/payments/stripe/intents`;
+  const endpoint = `${gatewayBaseUrl()}/api/v1/payments/stripe/checkout-sessions`;
   const payload = {
     amount: input.amount,
     currency: input.currency,
     payment_method_types: input.paymentMethodTypes ?? ['card', 'promptpay'],
     external_reference: input.externalReference,
     description: input.description,
-    webhook_url: input.webhookUrl,
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
   };
 
-  paymentDebugLog('AMS STRIPE REQUEST', {
+  paymentDebugLog('AMS HOSTED CHECKOUT REQUEST', {
     method: 'POST',
     endpoint,
     headers: {
@@ -246,7 +246,7 @@ export async function createStripePaymentIntentWithAms(input: {
       cache: 'no-store',
     });
   } catch (error) {
-    paymentDebugLog('AMS STRIPE NETWORK ERROR', {
+    paymentDebugLog('AMS HOSTED CHECKOUT NETWORK ERROR', {
       requestId,
       idempotencyKey: input.idempotencyKey,
       error: error instanceof Error
@@ -261,16 +261,14 @@ export async function createStripePaymentIntentWithAms(input: {
       code: 'INVALID_GATEWAY_RESPONSE',
       message: `AMS Gateway returned HTTP ${response.status} without JSON`,
     },
-  }))) as AmsStripeIntentResponse;
+  }))) as AmsHostedCheckoutResponse;
 
-  paymentDebugLog('AMS STRIPE RESPONSE', {
+  paymentDebugLog('AMS HOSTED CHECKOUT RESPONSE', {
     requestId,
     idempotencyKey: input.idempotencyKey,
     httpStatus: response.status,
     ok: response.ok,
-    body: body.data
-      ? { ...body, data: { ...body.data, client_secret: body.data.client_secret ? '[REDACTED]' : undefined } }
-      : body,
+    body,
   });
 
   return { ok: response.ok, status: response.status, requestId, body };
