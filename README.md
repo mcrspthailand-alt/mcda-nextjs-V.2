@@ -42,6 +42,12 @@ The application requires a signed-in account.
 
 Payment orders and subscriptions are stored in PostgreSQL. The primary Stripe flow is AMS Hosted Checkout. MCDA never receives or stores Stripe API keys, Stripe.js publishable keys, or Stripe webhook secrets.
 
+## AMS Gateway integration guide
+
+For the end-to-end client integration flow, Hosted Checkout request contract, webhook relay, idempotency, security rules, error handling, and MCDA reference implementation, see:
+
+- [docs/AMS_GATEWAY_INTEGRATION.md](docs/AMS_GATEWAY_INTEGRATION.md)
+
 ## Payment configuration
 
 Required production environment variables:
