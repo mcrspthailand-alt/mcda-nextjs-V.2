@@ -45,8 +45,10 @@ async function ensureFreshCheckoutSchema() {
 }
 
 /**
- * A deliberate new click supersedes only this account's unpaid local orders.
- * This is NOT remote Stripe expiration, deletion, a refund or a paid-state change.
+ * Every deliberate new click creates a fresh order, regardless of old payment
+ * states or an existing subscription. Uncertain/settled records remain intact.
+ * Only awaiting unpaid local orders are superseded; this is NOT remote Stripe
+ * expiration, deletion, a refund or evidence that an older payment failed.
  * Retry the same click with the same requestId; never generate a new ID on retry.
  */
 export async function createFreshCheckoutOrder(userId: string, requestId: string): Promise<PaymentOrder> {
@@ -76,22 +78,15 @@ export async function createFreshCheckoutOrder(userId: string, requestId: string
       return order;
     }
 
-    // Lock potential predecessors so a concurrent webhook settlement cannot be overwritten.
-    const outstanding = await client.query<Pick<PaymentOrder, 'id' | 'status'>>(
+    // Lock only records we may retire. Do not gate a NEW click on old processing,
+    // pending, requires_action, manual_review or payment_unknown transactions, or
+    // on an existing subscription. Keep those records for late AMS reconciliation.
+    await client.query(
       `SELECT id, status FROM payment_orders
        WHERE user_id = $1 AND (plan_code = $2 OR plan_code IS NULL)
-         AND status IN ('awaiting_payment', 'failed', 'expired', 'canceled', 'cancelled',
-                        'processing', 'requires_action', 'pending', 'manual_review', 'payment_unknown')
+         AND status = 'awaiting_payment' AND paid_at IS NULL
        ORDER BY id FOR UPDATE`, [userId, WEEKLY_PLAN_CODE],
     );
-    if (outstanding.rows.some((order) => ['processing', 'requires_action', 'pending', 'manual_review', 'payment_unknown'].includes(order.status))) {
-      throw new FreshCheckoutError('PAYMENT_CONFIRMATION_PENDING', 'มีรายการกำลังตรวจสอบเงิน กรุณารอผล AMS ก่อนเริ่มใหม่ และห้ามชำระซ้ำหากถูกตัดเงินแล้ว');
-    }
-    const active = await client.query(
-      `SELECT id FROM subscriptions WHERE user_id = $1 AND status = 'active'
-       AND starts_at <= NOW() AND ends_at > NOW() LIMIT 1`, [userId],
-    );
-    if (active.rowCount) throw new FreshCheckoutError('PREMIUM_ALREADY_ACTIVE', 'Premium ใช้งานอยู่แล้ว กรุณาตรวจสอบสถานะสมาชิก ไม่ต้องชำระซ้ำ');
 
     const planResult = await client.query<{ code: string; price_thb: string; duration_days: number; is_active: boolean }>(
       'SELECT code, price_thb::text, duration_days, is_active FROM membership_plans WHERE code = $1 FOR SHARE',
@@ -99,7 +94,7 @@ export async function createFreshCheckoutOrder(userId: string, requestId: string
     );
     const plan = planResult.rows[0];
     if (!plan?.is_active) throw new FreshCheckoutError('PLAN_UNAVAILABLE', 'แพ็กเกจนี้ยังไม่เปิดรับชำระ');
-    // Only awaiting orders change status; failed/expired history stays intact.
+    // Only awaiting orders change status; all other payment history stays intact.
     await client.query(
       `UPDATE payment_orders SET status = 'superseded', updated_at = NOW()
        WHERE user_id = $1 AND (plan_code = $2 OR plan_code IS NULL)

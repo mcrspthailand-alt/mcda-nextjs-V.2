@@ -29,7 +29,7 @@ function apiFixture(options = {}) {
   const route = load('../app/api/billing/orders/route.ts', {
     'next/server': next, qrcode: { default: {} },
     '@/lib/request-user': { getRequestUser: async () => options.noUser ? null : { id: 'alice', email: 'alice@example.test' } },
-    '@/lib/membership': membership,
+    '@/lib/membership': { ...membership, getEntitlements: async () => ({ plan: options.premium ? 'premium' : 'free' }) },
     '@/lib/admin': { isAdminEmail: () => false },
     '@/lib/fresh-checkout-order': { ...fresh, createFreshCheckoutOrder: async (user, id) => {
       calls.push({ user, id, kind: 'fresh' });
@@ -52,6 +52,15 @@ test('fresh API binds request to authenticated user and returns JSON 201', async
   assert.equal(r.status, 201); assert.equal(r.headers.get('cache-control'), 'no-store');
   assert.equal((await r.json()).order.id, 'new-order');
   assert.deepEqual(f.calls, [{ user: 'alice', id, kind: 'fresh' }]);
+});
+test('fresh API does not reject creation when entitlement changes to Premium', async () => {
+  const f = apiFixture({ premium: true });
+  const r = await f.invoke({ freshCheckout: true, requestId: crypto.randomUUID() });
+  assert.equal(r.status, 201);
+  const body = await r.json();
+  assert.equal(body.order.id, 'new-order');
+  assert.equal(body.entitlements.plan, 'premium');
+  assert.equal(f.calls.length, 1);
 });
 test('empty POST still uses the QR/slip path', async () => {
   const f = apiFixture(); const r = await f.invoke();
@@ -79,10 +88,10 @@ test('oversized fresh request is bounded', async () => {
   const f = apiFixture(); const r = await f.invoke(' '.repeat(1025));
   assert.equal(r.status, 413); assert.equal(f.calls.length, 0);
 });
-test('processing guard returns useful JSON rather than clearing or retrying', async () => {
-  const f = apiFixture({ error: new fresh.FreshCheckoutError('PAYMENT_CONFIRMATION_PENDING', 'ตรวจสอบเงินก่อน') });
+test('disabled plan still returns useful JSON without clearing or retrying', async () => {
+  const f = apiFixture({ error: new fresh.FreshCheckoutError('PLAN_UNAVAILABLE', 'แพ็กเกจนี้ยังไม่เปิดรับชำระ') });
   const r = await f.invoke({ freshCheckout: true, requestId: crypto.randomUUID() });
-  assert.equal(r.status, 409); assert.equal((await r.json()).error.code, 'PAYMENT_CONFIRMATION_PENDING');
+  assert.equal(r.status, 409); assert.equal((await r.json()).error.code, 'PLAN_UNAVAILABLE');
   assert.equal(f.calls.length, 1);
 });
 test('billing button explicitly requests a new click without bypassing JSON or redirect checks', () => {
@@ -94,6 +103,7 @@ test('billing button explicitly requests a new click without bypassing JSON or r
   assert.match(fn, /setSlip\(null\)/);
   assert.match(fn, /readBillingJson/);
   assert.match(fn, /validHostedCheckoutUrl/);
+  assert.match(fn, /window.location.assign\(checkoutData.checkoutUrl\)/);
   assert.doesNotMatch(fn, /setInterval|setTimeout/);
 });
 
@@ -126,7 +136,7 @@ test('late failure does not revive superseded order', async () => {
   const f = webhookFixture(); assert.equal((await f.invoke('awaiting_payment')).status, 200);
   assert.equal(f.row.status, 'superseded'); assert.equal(f.count(), 0);
 });
-test('late real processing is retained for payment safety', async () => {
+test('late real processing is retained for payment reconciliation', async () => {
   const f = webhookFixture(); assert.equal((await f.invoke('processing')).status, 200);
   assert.equal(f.row.status, 'processing'); assert.equal(f.count(), 0);
 });
