@@ -12,6 +12,15 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // API callers need JSON 401, not a followed redirect to the HTML login page.
+  // Keep the existing access boundary. AMS relay requires an authenticated
+  // server-to-server ingress before exempting /api/webhooks/ams from user auth.
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    return NextResponse.json(
+      { error: { code: 'UNAUTHENTICATED', message: 'API request is not authenticated' } },
+      { status: 401, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
   return NextResponse.redirect(new URL('/auth/sign-in', request.url));
 }
 

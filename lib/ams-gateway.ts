@@ -18,10 +18,30 @@ function paymentDebugEnabled() {
 
 function paymentDebugLog(label: string, payload: unknown) {
   if (!paymentDebugEnabled()) return;
+  console.log(`[MCDA PAYMENT DEBUG] ${label}\n${JSON.stringify(payload, null, 2)}`);
+}
+
+function gatewayTimeoutMs() {
+  const raw = process.env.MCDA_AMS_TIMEOUT_MS;
+  const value = raw ? Number(raw) : 60_000;
+  if (!Number.isInteger(value) || value < 5_000 || value > 90_000) throw new Error('Invalid MCDA_AMS_TIMEOUT_MS');
+  return value;
+}
+
+type GatewayError = { error: { code: string; message: string } };
+
+async function gatewayJson<T extends object>(response: Response): Promise<T | GatewayError> {
+  const mediaType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  if (mediaType !== 'application/json' && !/^application\/[a-z0-9!#$&^_.+-]+\+json$/.test(mediaType)) {
+    return { error: { code: 'AMS_NON_JSON_RESPONSE', message: 'AMS returned a non-JSON response' } };
+  }
   try {
-    console.log(`[MCDA PAYMENT DEBUG] ${label}\n${JSON.stringify(payload, null, 2)}`);
-  } catch {
-    console.log(`[MCDA PAYMENT DEBUG] ${label}`, payload);
+    const body: unknown = await response.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('shape');
+    return body as T;
+  } catch (error) {
+    if (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name)) throw error;
+    return { error: { code: 'INVALID_GATEWAY_RESPONSE', message: 'AMS returned invalid JSON' } };
   }
 }
 
@@ -46,37 +66,22 @@ export type AmsSlipVerificationResponse = {
           ref2?: string;
           receiver?: {
             account?: {
-              name?: {
-                th?: string;
-                en?: string;
-              };
-              proxy?: {
-                type?: string;
-                account?: string;
-              };
+              name?: { th?: string; en?: string };
+              proxy?: { type?: string; account?: string };
             };
             merchantId?: string;
           };
           amount?: {
             amount?: string | number;
-            local?: {
-              amount?: string | number;
-              currency?: string | number;
-            };
+            local?: { amount?: string | number; currency?: string | number };
           };
         };
       };
       message?: string;
     };
   };
-  error?: {
-    code?: string;
-    message?: string;
-    provider_response?: unknown;
-  };
-  meta?: {
-    request_id?: string;
-  };
+  error?: { code?: string; message?: string; provider_response?: unknown };
+  meta?: { request_id?: string };
 };
 
 export async function verifySlipWithAms(input: {
@@ -91,76 +96,20 @@ export async function verifySlipWithAms(input: {
   formData.append('external_reference', input.externalReference);
   formData.append('expected_amount', input.expectedAmount);
   formData.append('expected_currency', input.expectedCurrency);
-
   const requestId = randomUUID();
-  const endpoint = `${gatewayBaseUrl()}/api/v1/slips/verify`;
-
-  paymentDebugLog('AMS REQUEST', {
+  const response = await fetch(`${gatewayBaseUrl()}/api/v1/slips/verify`, {
     method: 'POST',
-    endpoint,
-    headers: {
-      'X-AMS-API-Key': '[REDACTED]',
-      'X-Request-Id': requestId,
-      'Idempotency-Key': input.idempotencyKey,
-    },
-    formData: {
-      image: {
-        name: input.image.name || 'slip.jpg',
-        type: input.image.type,
-        size: input.image.size,
-      },
-      external_reference: input.externalReference,
-      expected_amount: input.expectedAmount,
-      expected_currency: input.expectedCurrency,
-    },
+    headers: { 'X-AMS-API-Key': gatewayApiKey(), 'X-Request-Id': requestId,
+      'Idempotency-Key': input.idempotencyKey, Accept: 'application/json' },
+    body: formData,
+    cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(gatewayTimeoutMs()),
   });
-
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'X-AMS-API-Key': gatewayApiKey(),
-        'X-Request-Id': requestId,
-        'Idempotency-Key': input.idempotencyKey,
-      },
-      body: formData,
-      cache: 'no-store',
-    });
-  } catch (error) {
-    paymentDebugLog('AMS NETWORK ERROR', {
-      requestId,
-      idempotencyKey: input.idempotencyKey,
-      error: error instanceof Error
-        ? { name: error.name, message: error.message, stack: error.stack }
-        : String(error),
-    });
-    throw error;
-  }
-
-  const body = (await response.json().catch(() => ({
-    error: {
-      code: 'INVALID_GATEWAY_RESPONSE',
-      message: `AMS Gateway returned HTTP ${response.status} without JSON`,
-    },
-  }))) as AmsSlipVerificationResponse;
-
-  paymentDebugLog('AMS RESPONSE', {
-    requestId,
-    idempotencyKey: input.idempotencyKey,
-    httpStatus: response.status,
-    ok: response.ok,
-    body,
-  });
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    requestId,
-    body,
-  };
+  const body: AmsSlipVerificationResponse = await gatewayJson<AmsSlipVerificationResponse>(response);
+  // Log correlation/status only, not customer slip, recipient or full provider payloads.
+  paymentDebugLog('AMS SLIP RESPONSE', { requestId, httpStatus: response.status,
+    code: body.error?.code, status: body.data?.status });
+  return { ok: response.ok && !body.error, status: response.status, requestId, body };
 }
-
 
 export type AmsServiceResponse = {
   data?: {
@@ -178,9 +127,11 @@ export type AmsHostedCheckoutResponse = {
     status?: string;
     provider?: string;
     checkout_session_id?: string;
-    checkout_url?: string;
+    checkout_url?: string | null;
     payment_intent_id?: string | null;
     external_reference?: string;
+    amount?: string | number;
+    currency?: string;
   };
   error?: { code?: string; message?: string; provider_response?: unknown };
   meta?: { request_id?: string };
@@ -189,14 +140,11 @@ export type AmsHostedCheckoutResponse = {
 export async function getAmsService() {
   const requestId = randomUUID();
   const response = await fetch(`${gatewayBaseUrl()}/api/v1/service`, {
-    headers: {
-      'X-AMS-API-Key': gatewayApiKey(),
-      'X-Request-Id': requestId,
-    },
-    cache: 'no-store',
+    headers: { 'X-AMS-API-Key': gatewayApiKey(), 'X-Request-Id': requestId, Accept: 'application/json' },
+    cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(10_000),
   });
-  const body = (await response.json().catch(() => ({}))) as AmsServiceResponse;
-  return { ok: response.ok, status: response.status, requestId, body };
+  const body: AmsServiceResponse = await gatewayJson<AmsServiceResponse>(response);
+  return { ok: response.ok && !body.error, status: response.status, requestId, body };
 }
 
 export async function createHostedCheckoutWithAms(input: {
@@ -222,56 +170,25 @@ export async function createHostedCheckoutWithAms(input: {
     cancel_url: input.cancelUrl,
     webhook_url: input.webhookUrl,
   };
-
   paymentDebugLog('AMS HOSTED CHECKOUT REQUEST', {
+    requestId, method: 'POST', endpoint, idempotencyKey: input.idempotencyKey,
+    externalReference: input.externalReference,
+  });
+  // Do not retry with a new key on timeouts, redirects or non-JSON responses.
+  const response = await fetch(endpoint, {
     method: 'POST',
-    endpoint,
-    headers: {
-      'X-AMS-API-Key': '[REDACTED]',
-      'X-Request-Id': requestId,
-      'Idempotency-Key': input.idempotencyKey,
-    },
-    payload,
+    headers: { 'X-AMS-API-Key': gatewayApiKey(), 'X-Request-Id': requestId,
+      'Idempotency-Key': input.idempotencyKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload), cache: 'no-store', redirect: 'manual',
+    signal: AbortSignal.timeout(gatewayTimeoutMs()),
   });
-
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'X-AMS-API-Key': gatewayApiKey(),
-        'X-Request-Id': requestId,
-        'Idempotency-Key': input.idempotencyKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      cache: 'no-store',
-    });
-  } catch (error) {
-    paymentDebugLog('AMS HOSTED CHECKOUT NETWORK ERROR', {
-      requestId,
-      idempotencyKey: input.idempotencyKey,
-      error: error instanceof Error
-        ? { name: error.name, message: error.message }
-        : String(error),
-    });
-    throw error;
-  }
-
-  const body = (await response.json().catch(() => ({
-    error: {
-      code: 'INVALID_GATEWAY_RESPONSE',
-      message: `AMS Gateway returned HTTP ${response.status} without JSON`,
-    },
-  }))) as AmsHostedCheckoutResponse;
-
+  const body: AmsHostedCheckoutResponse = await gatewayJson<AmsHostedCheckoutResponse>(response);
   paymentDebugLog('AMS HOSTED CHECKOUT RESPONSE', {
-    requestId,
-    idempotencyKey: input.idempotencyKey,
-    httpStatus: response.status,
-    ok: response.ok,
-    body,
+    requestId, idempotencyKey: input.idempotencyKey, httpStatus: response.status,
+    contentType: response.headers.get('content-type'), ok: response.ok && !body.error,
+    code: body.error?.code, paymentId: body.data?.payment_id,
+    checkoutSessionId: body.data?.checkout_session_id, status: body.data?.status,
+    hasCheckoutUrl: typeof body.data?.checkout_url === 'string' && Boolean(body.data.checkout_url),
   });
-
-  return { ok: response.ok, status: response.status, requestId, body };
+  return { ok: response.ok && !body.error, status: response.status, requestId, body };
 }
