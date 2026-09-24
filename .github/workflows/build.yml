@@ -26,7 +26,7 @@ jobs:
         run: npm install
 
       - name: Checkout and AMS relay regression tests
-        run: node --experimental-strip-types --test tests/checkout-errors.test.mjs tests/ams-relay.test.mjs
+        run: node --experimental-strip-types --test tests/checkout-errors.test.mjs tests/ams-relay.test.mjs tests/fresh-checkout.test.mjs tests/fresh-checkout-http.test.mjs
 
       - name: Build Next.js
         run: npm run build
