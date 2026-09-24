@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE, verifySession } from '@/lib/session';
 
 export async function middleware(request: NextRequest) {
+  // Only this exact endpoint uses per-order AMS callback authentication in its
+  // route handler. Never redirect an AMS POST to the browser sign-in page.
+  // Do not exempt all /api/webhooks or trust caller-supplied AMS headers here.
+  if (request.nextUrl.pathname === '/api/webhooks/ams') return NextResponse.next();
+
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (token) {
     try {
@@ -12,9 +17,6 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // API callers need JSON 401, not a followed redirect to the HTML login page.
-  // Keep the existing access boundary. AMS relay requires an authenticated
-  // server-to-server ingress before exempting /api/webhooks/ams from user auth.
   if (request.nextUrl.pathname.startsWith('/api/')) {
     return NextResponse.json(
       { error: { code: 'UNAUTHENTICATED', message: 'API request is not authenticated' } },

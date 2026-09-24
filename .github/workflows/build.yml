@@ -9,6 +9,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Public fixture values for the disposable CI container; never production credentials.
+      AUTH_SECRET: ci-only-placeholder-secret-not-for-production
+      AMS_SERVICE_CODE: mcda-ci-smoke
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Checkout error regression tests
-        run: node --experimental-strip-types --test tests/checkout-errors.test.mjs
+      - name: Checkout and AMS relay regression tests
+        run: node --experimental-strip-types --test tests/checkout-errors.test.mjs tests/ams-relay.test.mjs
 
       - name: Build Next.js
         run: npm run build
@@ -31,7 +35,7 @@ jobs:
         run: docker build -t mcda-nextjs-v2:test .
 
       - name: Run Docker container
-        run: docker run -d --name mcda-nextjs-v2 -p 3000:3000 mcda-nextjs-v2:test
+        run: docker run -d --name mcda-nextjs-v2 -p 3000:3000 -e AUTH_SECRET -e AMS_SERVICE_CODE mcda-nextjs-v2:test
 
       - name: Smoke test Docker container
         run: |
@@ -46,6 +50,9 @@ jobs:
           docker ps -a
           docker logs mcda-nextjs-v2
           exit 1
+
+      - name: AMS webhook HTTP POST smoke test
+        run: node tests/ams-relay-http-smoke.mjs
 
       - name: Cleanup Docker container
         if: always()

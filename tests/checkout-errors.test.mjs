@@ -102,11 +102,12 @@ function loadModule(path, dependencies) {
   }, module.exports, module);
   return module.exports;
 }
+const relay = loadModule('../lib/ams-relay.ts', { 'node:crypto': crypto });
 function routeHarness(gatewayData = pending, options = {}) {
   const calls = [], updates = [];
   const row = { id: 'unit-order-id', user_id: 'unit-user', external_reference: reference,
     amount: '59.00', currency: 'THB', status: 'awaiting_payment', expires_at: new Date(Date.now() + 60_000),
-    stripe_checkout_session_id: null, ams_payment_id: null, ...options.row };
+    stripe_checkout_session_id: null, ams_payment_id: null, ams_webhook_auth_version: 1, ...options.row };
   const route = loadModule('../app/api/billing/orders/[id]/checkout/route.ts', {
     'node:crypto': crypto,
     'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
@@ -125,10 +126,12 @@ function routeHarness(gatewayData = pending, options = {}) {
       },
     },
     '@/lib/hosted-checkout-result': checkoutRules,
+    '@/lib/ams-relay': relay,
   });
   return { calls, updates, invoke: () => route.POST({}, { params: Promise.resolve({ id: 'unit-order-id' }) }) };
 }
 process.env.AMS_SERVICE_CODE = 'mcda-test';
+process.env.AUTH_SECRET = 'unit-test-only-not-a-real-secret-1234567890';
 process.env.NEXT_PUBLIC_APP_URL = 'https://mcda.example.test';
 process.env.AMS_STRIPE_PAYMENT_METHODS = 'card,promptpay';
 
@@ -149,7 +152,7 @@ test('real route accepts usable checkout with null PaymentIntent and retains cal
   assert.equal(h.updates.length, 1);
   assert.ok(!h.updates[0].sql.includes("status = 'paid'"));
   assert.equal(h.calls[0].successUrl, `https://mcda.example.test/billing?checkout=success&order_id=${reference}`);
-  assert.equal(h.calls[0].webhookUrl, 'https://mcda.example.test/api/webhooks/ams');
+  assert.equal(h.calls[0].webhookUrl, relay.amsRelayUrl('https://mcda.example.test', reference));
 });
 test('retries retain exactly the existing deterministic key and payload', async () => {
   const h = routeHarness({ ...pending, status: 'failed', checkout_url: null });
@@ -192,13 +195,14 @@ test('AMS client requests JSON, has a deadline, disables redirects and never exp
     const adapter = loadModule('../lib/ams-gateway.ts', { 'node:crypto': crypto });
     const result = await adapter.createHostedCheckoutWithAms({ amount: '59.00', currency: 'THB', externalReference: reference,
       description: 'unit test', idempotencyKey: 'unit-key', successUrl: 'https://mcda.example.test/success',
-      cancelUrl: 'https://mcda.example.test/cancel', webhookUrl: 'https://mcda.example.test/api/webhooks/ams' });
+      cancelUrl: 'https://mcda.example.test/cancel', webhookUrl: relay.amsRelayUrl('https://mcda.example.test', reference) });
     assert.equal(result.ok, true);
     assert.equal(calls[0].init.headers.Accept, 'application/json');
     assert.equal(calls[0].init.redirect, 'manual');
     assert.ok(calls[0].init.signal instanceof AbortSignal);
     assert.ok(!logs.join('\n').includes(pending.checkout_url));
     assert.ok(!logs.join('\n').includes('ams_test_fixture_not_real'));
+    assert.ok(!logs.join('\n').includes(new URL(relay.amsRelayUrl('https://mcda.example.test', reference)).searchParams.get('token')));
   } finally {
     globalThis.fetch = originalFetch; console.log = originalLog; delete process.env.MCDA_PAYMENT_DEBUG_LOG;
   }
@@ -214,7 +218,7 @@ test('AMS client normalizes HTML without returning its body', async () => {
     assert.ok(!JSON.stringify(result).includes('private upstream'));
   } finally { globalThis.fetch = originalFetch; }
 });
-test('protected API returns JSON 401, protected page keeps login redirect', async () => {
+test('protected API returns JSON 401; only exact AMS route delegates authentication', async () => {
   const m = loadModule('../middleware.ts', {
     'next/server': { NextResponse: { json: (b, i) => Response.json(b, i), redirect: u => Response.redirect(u), next: () => new Response(null) } },
     '@/lib/session': { SESSION_COOKIE: 'mcda_session', verifySession: async () => { throw new Error('bad session'); } },
@@ -224,6 +228,15 @@ test('protected API returns JSON 401, protected page keeps login redirect', asyn
   assert.equal(response.status, 401);
   assert.match(response.headers.get('content-type'), /application\/json/);
   assert.equal((await invoke('/billing')).status, 302);
-  // Do not silently make the unsigned payment relay endpoint public.
-  assert.equal((await invoke('/api/webhooks/ams')).status, 401);
+  assert.equal((await invoke('/api/webhooks/ams')).status, 200);
+  assert.equal((await invoke('/api/webhooks/ams-other')).status, 401);
+  assert.equal((await invoke('/api/webhooks/ams/nested')).status, 401);
+});
+test('legacy order never changes callback payload/key or creates a replacement session', async () => {
+  const h = routeHarness(pending, { row: { ams_webhook_auth_version: 0 } });
+  const response = await h.invoke();
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, 'AMS_LEGACY_CHECKOUT_REVIEW_REQUIRED');
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.updates.length, 0);
 });

@@ -52,7 +52,8 @@ export function ensureMembershipSchema() {
           ADD COLUMN IF NOT EXISTS payment_method VARCHAR(32),
           ADD COLUMN IF NOT EXISTS stripe_payment_intent_id TEXT,
           ADD COLUMN IF NOT EXISTS stripe_checkout_session_id TEXT,
-          ADD COLUMN IF NOT EXISTS ams_payment_id TEXT;
+          ADD COLUMN IF NOT EXISTS ams_payment_id TEXT,
+          ADD COLUMN IF NOT EXISTS ams_webhook_auth_version SMALLINT NOT NULL DEFAULT 0;
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_stripe_intent
           ON payment_orders (stripe_payment_intent_id)
@@ -68,6 +69,9 @@ export function ensureMembershipSchema() {
           event_type VARCHAR(96) NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        ALTER TABLE payment_events ADD COLUMN IF NOT EXISTS delivery_id TEXT;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_events_delivery
+          ON payment_events (delivery_id) WHERE delivery_id IS NOT NULL;
 
         CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created
           ON payment_orders (user_id, created_at DESC);

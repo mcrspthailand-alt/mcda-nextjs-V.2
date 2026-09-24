@@ -5,6 +5,7 @@ import { getRequestUser } from '@/lib/request-user';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
 import { createHostedCheckoutWithAms, getAmsService } from '@/lib/ams-gateway';
 import { classifyHostedCheckout } from '@/lib/hosted-checkout-result';
+import { amsRelayUrl } from '@/lib/ams-relay';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,7 @@ type OrderRow = {
   expires_at: Date;
   stripe_checkout_session_id: string | null;
   ams_payment_id: string | null;
+  ams_webhook_auth_version: number;
 };
 
 function appOrigin() {
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const pool = getPool();
     const result = await pool.query<OrderRow>(
       `SELECT id, user_id, external_reference, amount::text, currency, status,
-              expires_at, stripe_checkout_session_id, ams_payment_id
+              expires_at, stripe_checkout_session_id, ams_payment_id, ams_webhook_auth_version
        FROM payment_orders WHERE id = $1 AND user_id = $2 LIMIT 1`,
       [id, user.id],
     );
@@ -78,11 +80,17 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (order.currency !== 'THB') {
       return json({ error: { code: 'ORDER_CURRENCY_INVALID', message: 'สกุลเงินของ Order ไม่รองรับ' } }, 409);
     }
+    // An older order may already have a remote session even when a timeout left
+    // local IDs null. Never change its payload/key to install callback auth.
+    if (order.ams_webhook_auth_version !== 1) {
+      return json({ error: { code: 'AMS_LEGACY_CHECKOUT_REVIEW_REQUIRED', retryable: false,
+        message: 'รายการเดิมต้องตรวจสอบและส่ง webhook เดิมใหม่จาก AMS กรุณาติดต่อผู้ดูแล ห้ามสร้างการชำระซ้ำ' },
+        externalReference: order.external_reference }, 409);
+    }
 
     const service = await getAmsService();
     const serviceData = service.body.data;
     if (!service.ok || !serviceData || serviceData.service_code !== serviceCode || serviceData.providers?.stripe !== true) {
-      // AMS authentication failure is not the customer's login expiring.
       return json({ error: { code: 'STRIPE_NOT_AVAILABLE', requestId: service.requestId,
         message: 'AMS service นี้ยังไม่ได้เปิดใช้งาน Stripe หรือการตั้งค่า service ไม่ถูกต้อง' } }, 503, service.requestId);
     }
@@ -92,10 +100,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const description = `MCDA Premium ${order.external_reference}`;
     const successUrl = `${origin}/billing?checkout=success&order_id=${encodeURIComponent(order.external_reference)}`;
     const cancelUrl = `${origin}/billing?checkout=cancel&order_id=${encodeURIComponent(order.external_reference)}`;
-    const webhookUrl = `${origin}/api/webhooks/ams`;
+    const webhookUrl = amsRelayUrl(origin, order.external_reference);
 
-    // Preserve the existing key/payload for retry. Never rotate keys automatically
-    // to escape a failed/null checkout or an indeterminate network response.
+    // Retries keep the same per-order callback capability and deterministic key.
+    // AUTH_SECRET/service/origin must stay stable while attempts are outstanding.
     const checkoutFingerprint = createHash('sha256')
       .update(JSON.stringify({
         amount: order.amount,
@@ -127,14 +135,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
     const decision = classifyHostedCheckout(gateway.body.data, order.external_reference);
     if (!decision.ok) {
-      // A business failure carried by HTTP 200 is a JSON 409, not a generic 502.
-      // Do not store "paid", clear the session, or create a new payment attempt here.
       return json({ error: { code: decision.code, message: decision.message,
         requestId: gateway.requestId, retryable: false }, externalReference: order.external_reference },
       decision.status, gateway.requestId);
     }
 
-    // Do not replace a known session with a different one after settings change.
     if (order.stripe_checkout_session_id && order.stripe_checkout_session_id !== decision.sessionId) {
       return json({ error: { code: 'AMS_CHECKOUT_SESSION_CONFLICT', retryable: false,
         message: 'AMS ส่ง session คนละรายการ กรุณาให้ผู้ดูแลตรวจสอบก่อนชำระ', requestId: gateway.requestId } }, 409, gateway.requestId);
@@ -155,7 +160,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     return json({ orderId: order.id, checkoutSessionId: decision.sessionId,
       checkoutUrl: decision.checkoutUrl }, 200, gateway.requestId);
   } catch (error) {
-    // Avoid logging provider payloads, credentials or checkout URLs.
     const timeout = error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name);
     console.error('Unable to start AMS Hosted Checkout', { kind: timeout ? 'timeout' : 'internal_error' });
     return json({ error: {
