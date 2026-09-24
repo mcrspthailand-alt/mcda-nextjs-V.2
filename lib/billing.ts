@@ -309,11 +309,11 @@ export async function createWeeklyPaymentOrder(userId: string) {
     `
       INSERT INTO payment_orders (
         id, user_id, external_reference, payment_reference, ref1, ref2,
-        amount, currency, status, expires_at, plan_code, plan_duration_days
+        amount, currency, status, expires_at, plan_code, plan_duration_days, ams_webhook_auth_version
       )
       VALUES (
         $1, $2, $3, $4, $5, $6,
-        $7::numeric, 'THB', 'awaiting_payment', NOW() + INTERVAL '24 hours', $8, $9
+        $7::numeric, 'THB', 'awaiting_payment', NOW() + INTERVAL '24 hours', $8, $9, 1
       )
       RETURNING
         id, user_id, external_reference, payment_reference, ref1, ref2,
