@@ -44,8 +44,9 @@ function fixture() {
             return result(r ? db.orders.filter(o => o.id === r.order_id && o.user_id === args[0]) : []);
           }
           if (q.startsWith('SELECT id, status FROM payment_orders')) {
-            const statuses = ['awaiting_payment', 'failed', 'expired', 'canceled', 'cancelled', 'processing', 'requires_action', 'pending', 'manual_review', 'payment_unknown'];
-            return result(db.orders.filter(o => o.user_id === args[0] && (!o.plan_code || o.plan_code === args[1]) && statuses.includes(o.status)));
+            assert.match(q, /status = 'awaiting_payment' AND paid_at IS NULL/);
+            return result(db.orders.filter(o => o.user_id === args[0] && (!o.plan_code || o.plan_code === args[1])
+              && o.status === 'awaiting_payment' && !o.paid_at));
           }
           if (q.startsWith('SELECT id FROM subscriptions')) return result(db.subscriptions.filter(s => s.user_id === args[0] && s.status === 'active' && s.ends_at > Date.now() && s.starts_at <= Date.now()));
           if (q.startsWith('SELECT code, price_thb::text')) return result(db.plan ? [db.plan] : []);
@@ -156,17 +157,62 @@ test('does not change paid/refunded/failed records or other accounts/plans', asy
   assert.deepEqual(db.orders.slice(0, 5), snapshot);
 });
 for (const status of ['processing', 'requires_action', 'pending', 'manual_review', 'payment_unknown']) {
-  test(`does not replace ${status} payment`, async () => {
-    const { db, api, old } = fixture(); db.orders.push(old({ status }));
-    await assert.rejects(api.createFreshCheckoutOrder('alice', randomUUID()), e => e.code === 'PAYMENT_CONFIRMATION_PENDING');
-    assert.equal(db.orders.length, 1); assert.equal(db.orders[0].status, status);
-  });
+  for (const expired of [false, true]) {
+    test(`new click bypasses old ${status} (expired=${expired}) without resetting its ledger`, async () => {
+      const { db, api, old } = fixture();
+      const previous = old({ status, expires_at: new Date(Date.now() + (expired ? -1 : 1) * 86400000),
+        stripe_checkout_session_id: 'cs_live_old', stripe_payment_intent_id: 'pi_old', ams_payment_id: 'ams-old' });
+      db.orders.push(previous); const snapshot = structuredClone(previous);
+      const created = await api.createFreshCheckoutOrder('alice', randomUUID());
+      assert.notEqual(created.id, previous.id);
+      assert.equal(created.status, 'awaiting_payment');
+      assert.equal(created.stripe_checkout_session_id, null);
+      assert.equal(created.stripe_payment_intent_id, null);
+      assert.equal(created.ams_payment_id, null);
+      assert.equal(db.orders.length, 2);
+      assert.deepEqual(db.orders[0], snapshot);
+    });
+  }
 }
-test('active premium blocks additional purchase', async () => {
+test('a hidden old pending order cannot block the latest awaiting order or subsequent clicks', async () => {
+  const { db, api, old } = fixture();
+  const uncertain = ['processing', 'requires_action', 'pending', 'manual_review', 'payment_unknown']
+    .map(status => old({ status, plan_code: null, expires_at: new Date(0) }));
+  const awaiting = old();
+  db.orders.push(...uncertain, awaiting); const snapshot = structuredClone(uncertain);
+  const a = await api.createFreshCheckoutOrder('alice', randomUUID());
+  const b = await api.createFreshCheckoutOrder('alice', randomUUID());
+  assert.notEqual(a.id, b.id);
+  assert.equal(awaiting.status, 'superseded');
+  assert.equal(db.orders.length, 8);
+  assert.deepEqual(db.orders.slice(0, 5), snapshot);
+  assert.equal(db.orders.at(-1).id, b.id);
+});
+test('active premium does not block a deliberate new order or change the existing subscription', async () => {
   const { db, api } = fixture();
   db.subscriptions.push({ id: 'sub', user_id: 'alice', status: 'active', starts_at: Date.now() - 1000, ends_at: Date.now() + 86400000 });
-  await assert.rejects(api.createFreshCheckoutOrder('alice', randomUUID()), e => e.code === 'PREMIUM_ALREADY_ACTIVE');
-  assert.equal(db.orders.length, 0);
+  const snapshot = structuredClone(db.subscriptions);
+  const created = await api.createFreshCheckoutOrder('alice', randomUUID());
+  assert.equal(created.status, 'awaiting_payment');
+  assert.equal(db.orders.length, 1);
+  assert.deepEqual(db.subscriptions, snapshot);
+});
+test('an awaiting record with paid_at is never retired', async () => {
+  const { db, api, old } = fixture();
+  const previous = old({ paid_at: new Date(), provider_reference: 'pi_already_paid' });
+  db.orders.push(previous); const snapshot = structuredClone(previous);
+  await api.createFreshCheckoutOrder('alice', randomUUID());
+  assert.deepEqual(db.orders[0], snapshot);
+  assert.equal(db.orders.length, 2);
+});
+test('same-click replay is still idempotent while older payments remain unresolved', async () => {
+  const { db, api, old } = fixture(); const key = randomUUID();
+  db.orders.push(old({ status: 'processing' }));
+  const a = await api.createFreshCheckoutOrder('alice', key);
+  const b = await api.createFreshCheckoutOrder('alice', key);
+  assert.equal(a.id, b.id);
+  assert.equal(db.orders.length, 2);
+  assert.equal(db.orders[0].status, 'processing');
 });
 test('new order snapshots current database price and duration', async () => {
   const { db, api } = fixture(); db.plan.price_thb = '79.50'; db.plan.duration_days = 14;
@@ -195,6 +241,7 @@ test('request IDs are scoped to the authenticated account', async () => {
 });
 test('ledger preservation and SQL locking invariants', () => {
   assert.doesNotMatch(source, /\bDELETE\s+FROM\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
+  assert.doesNotMatch(source, /PAYMENT_CONFIRMATION_PENDING|PREMIUM_ALREADY_ACTIVE|SELECT id FROM subscriptions/);
   assert.match(source, /PRIMARY KEY \(user_id, request_id\)/);
   assert.match(source, /SELECT id FROM users WHERE id = \$1 FOR NO KEY UPDATE/);
   assert.match(source, /paid_at IS NULL/);
