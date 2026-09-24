@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { getRequestUser } from '@/lib/request-user';
 import { getEntitlements, getWeeklyPlan } from '@/lib/membership';
 import { isAdminEmail } from '@/lib/admin';
+import { createFreshCheckoutOrder, FreshCheckoutError, validateFreshCheckoutRequest } from '@/lib/fresh-checkout-order';
 import {
   buildPromptPayPayload,
   createWeeklyPaymentOrder,
@@ -73,24 +74,61 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
-  const user = await getRequestUser(request);
-  if (!user) {
-    return NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'กรุณาเข้าสู่ระบบ' } }, { status: 401 });
-  }
-
+async function freshRequestId(request: NextRequest): Promise<string | null> {
+  // Empty POST preserves the existing direct PromptPay/slip flow.
+  if (!request.body) return null;
+  const reader = request.body.getReader();
+  let raw = '';
+  let bytes = 0;
+  const decoder = new TextDecoder();
   try {
-    const order = await createWeeklyPaymentOrder(user.id);
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      bytes += part.value.byteLength;
+      if (bytes > 1024) {
+        await reader.cancel();
+        throw new FreshCheckoutError('INVALID_CHECKOUT_REQUEST', 'ข้อมูลคำขอใหญ่เกินกำหนด', 413);
+      }
+      raw += decoder.decode(part.value, { stream: true });
+    }
+    raw += decoder.decode();
+  } finally { reader.releaseLock(); }
+  if (!raw.trim()) return null;
+  const type = request.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
+  if (type !== 'application/json') throw new FreshCheckoutError('INVALID_CHECKOUT_REQUEST', 'ต้องส่งข้อมูลแบบ JSON', 415);
+  const origin = request.headers.get('origin');
+  const expected = new URL(process.env.NEXT_PUBLIC_APP_URL || request.url).origin;
+  if (origin && origin !== expected) throw new FreshCheckoutError('ORIGIN_NOT_ALLOWED', 'คำขอไม่ได้มาจากเว็บไซต์นี้', 403);
+  try { return validateFreshCheckoutRequest(JSON.parse(raw)); }
+  catch (error) {
+    if (error instanceof FreshCheckoutError) throw error;
+    throw new FreshCheckoutError('INVALID_CHECKOUT_REQUEST', 'ข้อมูล JSON ไม่ถูกต้อง', 400);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const user = await getRequestUser(request);
+    if (!user) {
+      return NextResponse.json({ error: { code: 'UNAUTHENTICATED', message: 'กรุณาเข้าสู่ระบบ' } }, { status: 401 });
+    }
+    const requestId = await freshRequestId(request);
+    const order = requestId
+      ? await createFreshCheckoutOrder(user.id, requestId)
+      : await createWeeklyPaymentOrder(user.id);
     const entitlements = await getEntitlements(user.id);
     return NextResponse.json(
       { entitlements, canManagePlan: isAdminEmail(user.email), ...(await responseOrder(order)) },
       { status: 201, headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    console.error('Unable to create MCDA payment order', error);
+    const known = error instanceof FreshCheckoutError;
+    if (!known) console.error('Unable to create MCDA payment order', { code: 'ORDER_CREATE_FAILED' });
     return NextResponse.json(
-      { error: { code: 'ORDER_CREATE_FAILED', message: 'ไม่สามารถสร้างรายการชำระเงินได้' } },
-      { status: 500 },
+      { error: { code: known ? error.code : 'ORDER_CREATE_FAILED',
+        message: known ? error.message : 'ไม่สามารถสร้างรายการชำระเงินได้', retryable: false } },
+      { status: known ? error.status : 500, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 }
