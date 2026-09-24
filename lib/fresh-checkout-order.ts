@@ -57,8 +57,9 @@ export async function createFreshCheckoutOrder(userId: string, requestId: string
     await client.query('BEGIN');
     await client.query("SET LOCAL lock_timeout = '3s'");
     await client.query("SET LOCAL statement_timeout = '5s'");
-    // Serialize click handling across tabs/processes without locking across network calls.
-    const user = await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    // Serialize fresh clicks, but allow webhook FK KEY SHARE locks on this user.
+    // FOR UPDATE here could deadlock against a webhook holding an old order lock.
+    const user = await client.query('SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE', [userId]);
     if (!user.rowCount) throw new FreshCheckoutError('UNAUTHENTICATED', 'กรุณาเข้าสู่ระบบ', 401);
 
     const replay = await client.query<PaymentOrder>(
