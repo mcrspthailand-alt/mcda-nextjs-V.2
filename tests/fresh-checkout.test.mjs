@@ -196,7 +196,7 @@ test('request IDs are scoped to the authenticated account', async () => {
 test('ledger preservation and SQL locking invariants', () => {
   assert.doesNotMatch(source, /\bDELETE\s+FROM\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
   assert.match(source, /PRIMARY KEY \(user_id, request_id\)/);
-  assert.match(source, /SELECT id FROM users WHERE id = \$1 FOR UPDATE/);
+  assert.match(source, /SELECT id FROM users WHERE id = \$1 FOR NO KEY UPDATE/);
   assert.match(source, /paid_at IS NULL/);
   assert.match(source, /FOR SHARE/);
 });
