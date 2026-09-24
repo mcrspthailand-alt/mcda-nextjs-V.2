@@ -161,7 +161,7 @@ export default function BillingPage() {
       setMessage(
         checkout === 'success'
           ? 'กลับจากหน้าชำระเงินแล้ว กำลังรอ AMS webhook ยืนยันสถานะ…'
-          : 'ยกเลิกการชำระเงินแล้ว คุณสามารถใช้ Order เดิมเพื่อชำระใหม่ได้',
+          : 'กลับจากหน้าชำระเงินแล้ว กด Card / PromptPay อีกครั้งเพื่อเริ่มรายการใหม่ หากถูกตัดเงินแล้วให้ตรวจสอบสถานะก่อน',
       );
       window.history.replaceState(null, '', '/billing');
     }
@@ -219,13 +219,21 @@ export default function BillingPage() {
   }
 
   async function startHostedCheckout() {
-    if (checkoutInFlight.current) return;
+    if (checkoutInFlight.current || creating || verifying || savingPlan) return;
     checkoutInFlight.current = true;
     setCreating(true);
-    setMessage('');
+    setMessage('กำลังเริ่มรายการชำระเงินใหม่…');
     setVerificationFeedback(null);
+    setSlip(null);
+    setCheckoutReturn(null);
     try {
-      const orderResponse = await fetch('/api/billing/orders', { method: 'POST' });
+      // One new ID per deliberate click, not per network retry of that click.
+      const requestId = crypto.randomUUID();
+      const orderResponse = await fetch('/api/billing/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ freshCheckout: true, requestId }),
+      });
       const orderData = await readBillingJson<BillingState>(orderResponse);
       if (!orderResponse.ok || !orderData?.order?.id) {
         throw new Error(billingErrorMessage(orderData, 'สร้างรายการไม่สำเร็จ'));
@@ -391,7 +399,7 @@ export default function BillingPage() {
           ) : (
             <div>
               {state?.stripeEnabled ? (
-                <button type="button" onClick={startHostedCheckout} disabled={creating} style={styles.primaryButton}>
+                <button type="button" onClick={startHostedCheckout} disabled={creating || verifying || savingPlan} style={styles.primaryButton}>
                   {creating ? 'กำลังเปิดหน้าชำระเงิน…' : `ชำระ Card / PromptPay ${planPriceLabel} บาท / Premium ${planDays} วัน`}
                 </button>
               ) : (
@@ -442,9 +450,12 @@ export default function BillingPage() {
               <div style={styles.muted}>
                 ระบบจะพาไปหน้าชำระเงินของ Stripe ผ่าน AMS Gateway รองรับ Card และ PromptPay ตามสิทธิ์ที่เปิดใช้งาน
               </div>
-              <button type="button" onClick={startHostedCheckout} disabled={creating} style={styles.primaryButton}>
+              <button type="button" onClick={startHostedCheckout} disabled={creating || verifying || savingPlan} style={styles.primaryButton}>
                 {creating ? 'กำลังเปิดหน้าชำระเงิน…' : 'ไปหน้าชำระเงิน Card / PromptPay'}
               </button>
+              <div style={styles.muted}>
+                ทุกครั้งที่กดจะเริ่มรายการใหม่และเลิกใช้รายการค้างใน MCDA โดยไม่ลบประวัติ ลิงก์ Stripe เดิมอาจยังไม่หมดอายุ โปรดใช้เฉพาะลิงก์ล่าสุดและห้ามชำระซ้ำหากถูกตัดเงินแล้ว
+              </div>
               <div style={styles.muted}>
                 การกลับจากหน้าชำระเงินยังไม่ถือว่าจ่ายสำเร็จ ระบบจะเปิด Premium หลังได้รับ webhook จาก AMS เท่านั้น
               </div>
@@ -508,6 +519,7 @@ export default function BillingPage() {
               <label style={styles.fileLabel}>
                 <span>อัปโหลดสลิป (JPEG / PNG / GIF / WebP ไม่เกิน 4 MB)</span>
                 <input
+                  key={state.order.id}
                   type="file"
                   accept="image/jpeg,image/png,image/gif,image/webp"
                   onChange={(event) => {
@@ -519,7 +531,7 @@ export default function BillingPage() {
               <button
                 type="button"
                 onClick={verifySlip}
-                disabled={verifying || !slip}
+                disabled={verifying || creating || !slip}
                 style={styles.primaryButton}
               >
                 {verifying ? 'กำลังตรวจสอบสลิป…' : 'ตรวจสอบสลิปและเปิด Premium'}
