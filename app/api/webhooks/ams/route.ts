@@ -59,7 +59,9 @@ export async function POST(request: NextRequest) {
            VALUES ($1, $2, $3, 'active', $4, $5, $6) ON CONFLICT (payment_order_id) DO NOTHING`,
           [randomUUID(), order.user_id, order.plan_code || WEEKLY_PLAN_CODE, paidAt, endsAt, order.id],
         );
-      } else if (!settled) {
+      } else if (!settled && (order.status !== 'superseded' || event.action === 'processing')) {
+        // A late failure must not revive a retired order for reuse. Real payment
+        // processing is still recorded, and late success always settles above.
         await client.query(
           `UPDATE payment_orders SET status = $2,
                   stripe_payment_intent_id = COALESCE(stripe_payment_intent_id, $3), updated_at = NOW()
