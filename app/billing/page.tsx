@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import Link from 'next/link';
+import { readBillingJson, billingErrorMessage } from '@/lib/billing-response';
+import { validHostedCheckoutUrl } from '@/lib/hosted-checkout-result';
 
 type Entitlements = {
   plan: 'free' | 'premium';
@@ -106,6 +108,7 @@ export default function BillingPage() {
   const [state, setState] = useState<BillingState | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const checkoutInFlight = useRef(false);
   const [verifying, setVerifying] = useState(false);
   const [slip, setSlip] = useState<File | null>(null);
   const [message, setMessage] = useState('');
@@ -140,8 +143,9 @@ export default function BillingPage() {
         window.location.href = '/auth/sign-in';
         return;
       }
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.error?.message || 'โหลดข้อมูลไม่สำเร็จ');
+      const data = await readBillingJson<BillingState>(response);
+      if (!response.ok) throw new Error(billingErrorMessage(data, 'โหลดข้อมูลไม่สำเร็จ'));
+      if (!data.entitlements || !data.plan) throw new Error('ข้อมูลสมาชิกจากเซิร์ฟเวอร์ไม่ครบ');
       setState(data);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'โหลดข้อมูลไม่สำเร็จ');
@@ -171,8 +175,9 @@ export default function BillingPage() {
       attempts += 1;
       try {
         const response = await fetch('/api/billing/orders', { cache: 'no-store' });
-        const data = await response.json();
+        const data = await readBillingJson<BillingState>(response);
         if (response.ok) {
+          if (!data.entitlements || !data.plan) throw new Error('ข้อมูลสมาชิกจากเซิร์ฟเวอร์ไม่ครบ');
           setState(data);
           if (data?.entitlements?.plan === 'premium') {
             setMessage('ชำระเงินสำเร็จ เปิดใช้งาน Premium แล้ว');
@@ -199,8 +204,9 @@ export default function BillingPage() {
     setVerificationFeedback(null);
     try {
       const response = await fetch('/api/billing/orders', { method: 'POST' });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.error?.message || 'สร้างรายการไม่สำเร็จ');
+      const data = await readBillingJson<BillingState>(response);
+      if (!response.ok) throw new Error(billingErrorMessage(data, 'สร้างรายการไม่สำเร็จ'));
+      if (!data.entitlements || !data.plan) throw new Error('ข้อมูลสมาชิกจากเซิร์ฟเวอร์ไม่ครบ');
       setState(data);
       setMessage(`สร้างรายการชำระเงิน ${formatThb(data?.order?.amount ?? data?.plan?.priceThb)} บาทแล้ว`);
       return data.order ?? null;
@@ -213,28 +219,32 @@ export default function BillingPage() {
   }
 
   async function startHostedCheckout() {
+    if (checkoutInFlight.current) return;
+    checkoutInFlight.current = true;
     setCreating(true);
     setMessage('');
     setVerificationFeedback(null);
     try {
       const orderResponse = await fetch('/api/billing/orders', { method: 'POST' });
-      const orderData = await orderResponse.json();
+      const orderData = await readBillingJson<BillingState>(orderResponse);
       if (!orderResponse.ok || !orderData?.order?.id) {
-        throw new Error(orderData?.error?.message || 'สร้างรายการไม่สำเร็จ');
+        throw new Error(billingErrorMessage(orderData, 'สร้างรายการไม่สำเร็จ'));
       }
+      if (!orderData.entitlements || !orderData.plan) throw new Error('ข้อมูลสมาชิกจากเซิร์ฟเวอร์ไม่ครบ');
       setState(orderData);
 
       const checkoutResponse = await fetch(`/api/billing/orders/${orderData.order.id}/checkout`, {
         method: 'POST',
       });
-      const checkoutData = await checkoutResponse.json();
-      if (!checkoutResponse.ok || typeof checkoutData?.checkoutUrl !== 'string') {
-        throw new Error(checkoutData?.error?.message || 'เปิดหน้าชำระเงินไม่สำเร็จ');
+      const checkoutData = await readBillingJson<{ checkoutUrl?: string }>(checkoutResponse);
+      if (!checkoutResponse.ok || !validHostedCheckoutUrl(checkoutData.checkoutUrl)) {
+        throw new Error(billingErrorMessage(checkoutData, 'เปิดหน้าชำระเงินไม่สำเร็จ'));
       }
 
       window.location.assign(checkoutData.checkoutUrl);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'เปิดหน้าชำระเงินไม่สำเร็จ');
+      checkoutInFlight.current = false;
       setCreating(false);
     }
   }
@@ -253,8 +263,9 @@ export default function BillingPage() {
           durationDays: Number(form.get('durationDays')),
         }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.error?.message || 'บันทึกแพ็กเกจไม่สำเร็จ');
+      const data = await readBillingJson<{ plan: BillingState['plan'] }>(response);
+      if (!response.ok) throw new Error(billingErrorMessage(data, 'บันทึกแพ็กเกจไม่สำเร็จ'));
+      if (!data.plan) throw new Error('ข้อมูลแพ็กเกจจากเซิร์ฟเวอร์ไม่ครบ');
       await loadBilling();
       setMessage(`อัปเดต Premium เป็น ${formatThb(data.plan.priceThb)} บาท / ${data.plan.durationDays} วันแล้ว`);
     } catch (error) {
@@ -283,7 +294,7 @@ export default function BillingPage() {
         method: 'POST',
         body: formData,
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await readBillingJson<{ ok?: boolean; message?: string }>(response);
 
       if (!response.ok) {
         const code = typeof data?.error?.code === 'string' ? data.error.code : undefined;
@@ -296,6 +307,7 @@ export default function BillingPage() {
         return;
       }
 
+      if (data.ok !== true) throw new Error('ระบบยังไม่ได้ยืนยันผลตรวจสอบสลิป กรุณาตรวจสอบสถานะ Order เดิม');
       setVerificationFeedback({
         kind: 'success',
         text: data?.message || `ชำระเงิน ${formatThb(state.order.amount, true)} บาทสำเร็จ เปิดใช้งาน Premium แล้ว`,
@@ -330,7 +342,10 @@ export default function BillingPage() {
         <Link href="/" style={styles.backLink}>← กลับหน้าวิเคราะห์</Link>
       </div>
 
-      {message ? <div style={styles.message}>{message}</div> : null}
+      {message ? <div role="status" aria-live="polite" style={styles.message}>
+        {message}
+        <div><button type="button" disabled={creating || verifying || savingPlan} onClick={() => void loadBilling()} style={styles.primaryButton}>ตรวจสอบสถานะ Order เดิม</button></div>
+      </div> : null}
 
       <section style={styles.planGrid}>
         <article style={styles.card}>
