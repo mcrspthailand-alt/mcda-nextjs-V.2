@@ -80,6 +80,7 @@ function fixture() {
     if (name === 'node:crypto') return { randomUUID };
     if (name === '@/lib/db') return { getPool: () => pool };
     if (name === '@/lib/membership-schema') return { ensureMembershipSchema: async () => {} };
+    if (name === '@/lib/membership-config') return { getConfiguredWeeklyPlanPrice: () => '59.00' };
     if (name === '@/lib/membership') return { WEEKLY_PLAN_CODE: planCode };
     throw new Error(`Unexpected import: ${name}`);
   } });
@@ -214,10 +215,10 @@ test('same-click replay is still idempotent while older payments remain unresolv
   assert.equal(db.orders.length, 2);
   assert.equal(db.orders[0].status, 'processing');
 });
-test('new order snapshots current database price and duration', async () => {
+test('new order uses configured price and current database duration', async () => {
   const { db, api } = fixture(); db.plan.price_thb = '79.50'; db.plan.duration_days = 14;
   const order = await api.createFreshCheckoutOrder('alice', randomUUID());
-  assert.equal(order.amount, '79.50'); assert.equal(order.plan_duration_days, 14);
+  assert.equal(order.amount, '59.00'); assert.equal(order.plan_duration_days, 14);
 });
 test('disabled plan makes no changes', async () => {
   const { db, api, old } = fixture(); db.orders.push(old()); db.plan.is_active = false;

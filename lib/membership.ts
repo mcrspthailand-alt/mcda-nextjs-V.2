@@ -1,5 +1,6 @@
 import { getPool } from '@/lib/db';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
+import { getConfiguredWeeklyPlanPrice } from '@/lib/membership-config';
 
 export const ALL_MCDA_MODELS = Object.freeze([
   'topsis',
@@ -27,7 +28,6 @@ export const FREE_MCDA_MODELS = Object.freeze([
 export const FREE_DAILY_ANALYSIS_LIMIT = 10;
 export const WEEKLY_PLAN_CODE = 'mcda_weekly_unlimited';
 export const DEFAULT_WEEKLY_PLAN_DAYS = 7;
-export const DEFAULT_WEEKLY_PLAN_PRICE_THB = '59.00';
 
 export type MembershipPlan = {
   code: string;
@@ -36,16 +36,6 @@ export type MembershipPlan = {
   durationDays: number;
   isActive: boolean;
 };
-
-function normalizePlanAmount(value: unknown) {
-  const raw = String(value ?? '').trim();
-  const match = raw.match(/^(\d+)(?:\.(\d{1,2}))?$/);
-  if (!match) throw new Error('Plan price must be a positive THB amount with at most 2 decimal places');
-  const whole = match[1].replace(/^0+(?=\d)/, '');
-  const decimals = (match[2] ?? '').padEnd(2, '0');
-  if (/^0+$/.test(whole) && decimals === '00') throw new Error('Plan price must be greater than 0');
-  return `${whole}.${decimals}`;
-}
 
 function publicPlan(row: {
   code: string;
@@ -57,7 +47,7 @@ function publicPlan(row: {
   return {
     code: row.code,
     title: row.title,
-    priceThb: normalizePlanAmount(row.price_thb),
+    priceThb: getConfiguredWeeklyPlanPrice(),
     durationDays: Number(row.duration_days),
     isActive: Boolean(row.is_active),
   };
@@ -86,7 +76,7 @@ export async function getWeeklyPlan(): Promise<MembershipPlan> {
     return {
       code: WEEKLY_PLAN_CODE,
       title: 'MCDA Premium Weekly',
-      priceThb: DEFAULT_WEEKLY_PLAN_PRICE_THB,
+      priceThb: getConfiguredWeeklyPlanPrice(),
       durationDays: DEFAULT_WEEKLY_PLAN_DAYS,
       isActive: true,
     };
@@ -94,10 +84,10 @@ export async function getWeeklyPlan(): Promise<MembershipPlan> {
   return publicPlan(row);
 }
 
-export async function updateWeeklyPlan(input: { priceThb: unknown; durationDays?: unknown }) {
+export async function updateWeeklyPlan(input: { durationDays?: unknown }) {
   await ensureMembershipSchema();
   const current = await getWeeklyPlan();
-  const priceThb = normalizePlanAmount(input.priceThb);
+  const priceThb = getConfiguredWeeklyPlanPrice();
   const durationDays = input.durationDays === undefined
     ? current.durationDays
     : Number(input.durationDays);

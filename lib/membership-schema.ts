@@ -1,5 +1,6 @@
 import { ensureAuthSchema } from '@/lib/auth-schema';
 import { getPool } from '@/lib/db';
+import { getConfiguredWeeklyPlanPrice } from './membership-config';
 
 const globalForMembershipSchema = globalThis as unknown as {
   mcdaMembershipSchemaReady?: Promise<void>;
@@ -21,10 +22,6 @@ export function ensureMembershipSchema() {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-
-        INSERT INTO membership_plans (code, title, price_thb, duration_days, is_active)
-        VALUES ('mcda_weekly_unlimited', 'MCDA Premium Weekly', 59.00, 7, TRUE)
-        ON CONFLICT (code) DO NOTHING;
 
         CREATE TABLE IF NOT EXISTS payment_orders (
           id TEXT PRIMARY KEY,
@@ -108,6 +105,15 @@ export function ensureMembershipSchema() {
           PRIMARY KEY (user_id, usage_date)
         );
       `);
+
+      await pool.query(
+        `
+          INSERT INTO membership_plans (code, title, price_thb, duration_days, is_active)
+          VALUES ('mcda_weekly_unlimited', 'MCDA Premium Weekly', $1::numeric, 7, TRUE)
+          ON CONFLICT (code) DO UPDATE SET price_thb = EXCLUDED.price_thb
+        `,
+        [getConfiguredWeeklyPlanPrice()],
+      );
     })().catch((error) => {
       globalForMembershipSchema.mcdaMembershipSchemaReady = undefined;
       throw error;

@@ -25,7 +25,6 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const plan = await updateWeeklyPlan({
-      priceThb: body.priceThb,
       durationDays: body.durationDays,
     });
     return NextResponse.json({ plan }, { headers: { 'Cache-Control': 'no-store' } });

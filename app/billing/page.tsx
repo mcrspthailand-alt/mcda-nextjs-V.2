@@ -129,7 +129,7 @@ export default function BillingPage() {
   const promptPayKind = state?.promptPayType === 'national_id'
     ? 'เลขบัตรประชาชน / เลขประจำตัวผู้เสียภาษี'
     : 'เบอร์มือถือ';
-  const planPrice = state?.plan.priceThb ?? state?.entitlements.weeklyPriceThb ?? '59.00';
+  const planPrice = state?.plan.priceThb ?? state?.entitlements.weeklyPriceThb ?? '';
   const planPriceLabel = formatThb(planPrice);
   const planDays = state?.plan.durationDays ?? 7;
   const orderAmount = state?.order?.amount ?? planPrice;
@@ -267,7 +267,6 @@ export default function BillingPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          priceThb: form.get('priceThb'),
           durationDays: Number(form.get('durationDays')),
         }),
       });
@@ -414,20 +413,16 @@ export default function BillingPage() {
 
       {state?.canManagePlan ? (
         <section style={{ ...styles.card, marginBottom: 18 }}>
-          <span style={styles.premiumBadge}>ADMIN PRICING</span>
-          <h2 style={styles.planTitle}>กำหนดราคา Premium</h2>
-          <p style={styles.muted}>ราคาและระยะเวลาเก็บใน PostgreSQL เปลี่ยนได้โดยไม่ต้องแก้ Environment หรือ deploy ใหม่</p>
+          <span style={styles.premiumBadge}>ADMIN PLAN</span>
+          <h2 style={styles.planTitle}>กำหนดระยะเวลา Premium</h2>
+          <p style={styles.muted}>ราคาดึงจาก MCDA_PREMIUM_WEEKLY_PRICE_THB ส่วนระยะเวลาแก้ไขได้โดยไม่ต้อง deploy ใหม่</p>
           <form onSubmit={updatePlan} style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap', marginTop: 12 }}>
-            <label style={styles.fileLabel}>
-              ราคา (บาท)
-              <input name="priceThb" inputMode="decimal" defaultValue={state.plan.priceThb} required />
-            </label>
             <label style={styles.fileLabel}>
               ระยะเวลา (วัน)
               <input name="durationDays" type="number" min={1} max={3650} defaultValue={state.plan.durationDays} required />
             </label>
             <button type="submit" disabled={savingPlan} style={styles.primaryButton}>
-              {savingPlan ? 'กำลังบันทึก…' : 'บันทึกราคาแพ็กเกจ'}
+              {savingPlan ? 'กำลังบันทึก…' : 'บันทึกระยะเวลาแพ็กเกจ'}
             </button>
           </form>
         </section>
@@ -546,7 +541,7 @@ export default function BillingPage() {
       ) : null}
 
       <section style={styles.note}>
-        ช่องทางหลักใช้ AMS Hosted Checkout: MCDA ส่ง Order ไป AMS, AMS สร้าง Stripe Checkout และ redirect ผู้ใช้ไปชำระเงิน จากนั้น Stripe ส่ง webhook เข้า AMS และ AMS relay กลับ MCDA เพื่อเปิด Premium ส่วน Standard Thai PromptPay QR + อัปโหลดสลิปยังคงเป็นช่องทางสำรอง
+        ราคา Premium ใช้ MCDA_PREMIUM_WEEKLY_PRICE_THB เป็นแหล่งอ้างอิงเดียวทั้ง Hosted Checkout และ Standard Thai PromptPay QR ส่วนระยะเวลาแพ็กเกจเก็บใน PostgreSQL และแก้ได้โดยผู้ดูแลระบบ ช่องทางหลักใช้ AMS Hosted Checkout: MCDA ส่ง Order ไป AMS, AMS สร้าง Stripe Checkout และ redirect ผู้ใช้ไปชำระเงิน จากนั้น Stripe ส่ง webhook เข้า AMS และ AMS relay กลับ MCDA เพื่อเปิด Premium ส่วน Standard Thai PromptPay QR + อัปโหลดสลิปยังคงเป็นช่องทางสำรอง
       </section>
     </main>
   );

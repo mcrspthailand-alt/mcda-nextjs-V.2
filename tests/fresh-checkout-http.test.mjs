@@ -21,7 +21,8 @@ const next = { NextResponse: { json: (body, init) => Response.json(body, init) }
 const membership = { WEEKLY_PLAN_CODE: 'mcda_weekly_unlimited', getWeeklyPlan: async () => ({ code: 'mcda_weekly_unlimited', priceThb: '59.00', durationDays: 7 }),
   getEntitlements: async () => ({ plan: 'free' }) };
 const fresh = load('../lib/fresh-checkout-order.ts', {
-  'node:crypto': crypto, '@/lib/db': {}, '@/lib/membership-schema': {}, '@/lib/membership': membership,
+  'node:crypto': crypto, '@/lib/db': {}, '@/lib/membership-schema': {},
+  '@/lib/membership-config': { getConfiguredWeeklyPlanPrice: () => '59.00' }, '@/lib/membership': membership,
 });
 process.env.NEXT_PUBLIC_APP_URL = 'https://mcda.example.test';
 function apiFixture(options = {}) {

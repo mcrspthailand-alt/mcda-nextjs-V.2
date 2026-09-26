@@ -34,9 +34,8 @@ The application requires a signed-in account.
 
 ### Premium Weekly
 
-- Price and duration are stored in PostgreSQL `membership_plans`.
-- Initial seed is 59.00 THB / 7 days.
-- Authorized admins can change price/duration from `/billing` without redeploying.
+- Price is controlled by `MCDA_PREMIUM_WEEKLY_PRICE_THB` (defaults to 59.00 THB).
+- Duration is stored in PostgreSQL `membership_plans` and authorized admins can change it from `/billing` without redeploying.
 - All 13 analysis models unlocked.
 - Unlimited analysis operations while the subscription is active.
 
@@ -58,8 +57,11 @@ AMS_GATEWAY_API_KEY=ams_...
 AMS_SERVICE_CODE=<assigned-service-code>
 AMS_STRIPE_PAYMENT_METHODS=card,promptpay
 
-# Accounts allowed to edit Premium price/duration from /billing
+# Accounts allowed to edit Premium duration from /billing
 MCDA_ADMIN_EMAILS=admin@example.com
+
+# Premium price used by all order and entitlement flows
+MCDA_PREMIUM_WEEKLY_PRICE_THB=59.00
 ```
 
 MCDA **must not** be configured with `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, or `STRIPE_WEBHOOK_SECRET`.

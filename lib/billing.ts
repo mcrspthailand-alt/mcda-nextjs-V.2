@@ -278,8 +278,8 @@ export async function createWeeklyPaymentOrder(userId: string) {
   if (!plan.isActive) throw new Error('Premium plan is not active');
 
   // A payable QR must always reflect the current configured package price.
-  // When the admin changes MCDA_PREMIUM_WEEKLY_PRICE_THB, retire any still-payable
-  // order created with the previous amount so it cannot be reused accidentally.
+  // Retire any still-payable order created with a previous configured amount so it
+  // cannot be reused accidentally after the Environment price changes.
   await pool.query(
     `
       UPDATE payment_orders

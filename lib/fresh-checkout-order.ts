@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { getPool } from '@/lib/db';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
+import { getConfiguredWeeklyPlanPrice } from '@/lib/membership-config';
 import { WEEKLY_PLAN_CODE } from '@/lib/membership';
 import type { PaymentOrder } from '@/lib/billing';
 
@@ -94,6 +95,7 @@ export async function createFreshCheckoutOrder(userId: string, requestId: string
     );
     const plan = planResult.rows[0];
     if (!plan?.is_active) throw new FreshCheckoutError('PLAN_UNAVAILABLE', 'แพ็กเกจนี้ยังไม่เปิดรับชำระ');
+    const priceThb = getConfiguredWeeklyPlanPrice();
     // Only awaiting orders change status; all other payment history stays intact.
     await client.query(
       `UPDATE payment_orders SET status = 'superseded', updated_at = NOW()
@@ -107,8 +109,8 @@ export async function createFreshCheckoutOrder(userId: string, requestId: string
       `INSERT INTO payment_orders (id, user_id, external_reference, payment_reference, ref1, ref2,
          amount, currency, status, expires_at, plan_code, plan_duration_days, ams_webhook_auth_version)
        VALUES ($1, $2, $3, $4, NULL, NULL, $5::numeric, 'THB', 'awaiting_payment',
-               NOW() + INTERVAL '24 hours', $6, $7, 1)
-       RETURNING *`, [id, userId, externalReference, paymentReference, plan.price_thb, plan.code, plan.duration_days],
+                     NOW() + INTERVAL '24 hours', $6, $7, 1)
+                   RETURNING *`, [id, userId, externalReference, paymentReference, priceThb, plan.code, plan.duration_days],
     );
     await client.query(
       'INSERT INTO checkout_start_requests (user_id, request_id, order_id) VALUES ($1, $2::uuid, $3)',
