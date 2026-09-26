@@ -5,7 +5,7 @@ export async function middleware(request: NextRequest) {
   // Only this exact endpoint uses per-order AMS callback authentication in its
   // route handler. Never redirect an AMS POST to the browser sign-in page.
   // Do not exempt all /api/webhooks or trust caller-supplied AMS headers here.
-  if (request.nextUrl.pathname === '/api/webhooks/ams') return NextResponse.next();
+  if (request.nextUrl.pathname === '/api/webhooks/ams' || request.nextUrl.pathname === '/webhooks/ams') return NextResponse.next();
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (token) {

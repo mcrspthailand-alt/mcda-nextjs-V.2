@@ -1,5 +1,3 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-
 export class RelayError extends Error {
   constructor(public code: string, public status: number) { super(code); }
 }
@@ -10,41 +8,33 @@ const record = (value: unknown): Record<string, unknown> =>
 const text = (value: unknown): string => typeof value === 'string' ? value : '';
 const identity = (value: unknown): string => text(value) || text(record(value).id);
 function settings() {
-  const secret = process.env.AUTH_SECRET || '';
   const service = (process.env.AMS_SERVICE_CODE || '').trim();
-  if (secret.length < 32 || !/^[A-Za-z0-9_-]{1,100}$/.test(service)) {
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(service)) {
     throw new RelayError('AMS_RELAY_NOT_CONFIGURED', 503);
   }
-  return { secret, service };
+  return { service };
 }
-function callbackToken(reference: string) {
-  if (!referencePattern.test(reference)) throw new RelayError('INVALID_ORDER_REFERENCE', 400);
-  const { secret, service } = settings();
-  return createHmac('sha256', secret)
-    .update(JSON.stringify(['mcda-ams-relay-v1', service, reference])).digest('hex');
-}
-/** A per-order bearer callback capability, NOT a signature of the event body. */
 export function amsRelayUrl(origin: string, reference: string): string {
   const base = new URL(origin);
   if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash || base.pathname !== '/') {
     throw new RelayError('AMS_RELAY_ORIGIN_INVALID', 503);
   }
-  const url = new URL('/api/webhooks/ams', base.origin);
-  url.searchParams.set('order_id', reference);
-  url.searchParams.set('token', callbackToken(reference));
-  return url.toString();
+  if (!referencePattern.test(reference)) throw new RelayError('INVALID_ORDER_REFERENCE', 400);
+  return new URL('/webhooks/ams', base.origin).toString();
 }
 export function authenticateRelayUrl(rawUrl: string): string {
   const url = new URL(rawUrl);
-  const reference = url.searchParams.get('order_id') || '';
-  const token = url.searchParams.get('token') || '';
-  if (url.pathname !== '/api/webhooks/ams' || url.searchParams.getAll('order_id').length !== 1 ||
-      url.searchParams.getAll('token').length !== 1 || !referencePattern.test(reference) || !/^[a-f0-9]{64}$/.test(token)) {
+  if (url.pathname !== '/webhooks/ams' || url.searchParams.toString()) {
     throw new RelayError('AMS_RELAY_UNAUTHENTICATED', 401);
   }
-  if (!timingSafeEqual(Buffer.from(token, 'hex'), Buffer.from(callbackToken(reference), 'hex'))) {
-    throw new RelayError('AMS_RELAY_UNAUTHENTICATED', 401);
-  }
+  return '';
+}
+export function relayReferenceFromBody(body: unknown): string {
+  const root = record(body);
+  const object = record(record(root.data).object);
+  const metadata = record(object.metadata);
+  const reference = text(metadata.ams_external_reference ?? object.client_reference_id);
+  if (!referencePattern.test(reference)) throw new RelayError('AMS_RELAY_IDENTITY_MISMATCH', 422);
   return reference;
 }
 export async function readRelayBody(request: Request): Promise<unknown> {

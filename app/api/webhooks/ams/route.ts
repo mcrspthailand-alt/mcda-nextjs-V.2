@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
 import { WEEKLY_PLAN_CODE } from '@/lib/membership';
-import { authenticateRelayUrl, parseRelayEvent, readRelayBody, RelayError, validateRelayOrder, type RelayOrder } from '@/lib/ams-relay';
+import { authenticateRelayUrl, parseRelayEvent, readRelayBody, relayReferenceFromBody, RelayError, validateRelayOrder, type RelayOrder } from '@/lib/ams-relay';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,8 +14,10 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, {
 export async function POST(request: NextRequest) {
   try {
     // Authentication belongs here, not in end-user cookie middleware.
-    const reference = authenticateRelayUrl(request.url);
-    const event = parseRelayEvent(await readRelayBody(request), request.headers, reference);
+    authenticateRelayUrl(request.url);
+    const body = await readRelayBody(request);
+    const reference = relayReferenceFromBody(body);
+    const event = parseRelayEvent(body, request.headers, reference);
     if (event.action === 'ignore') return json({ received: true, ignored: true });
     await ensureMembershipSchema();
     const client = await getPool().connect();
