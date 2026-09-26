@@ -128,12 +128,11 @@ export type RelayOrder = {
 };
 export function validateRelayOrder(event: RelayEvent, order: RelayOrder) {
   if (!order.ams_payment_id || (event.sessionId && !order.stripe_checkout_session_id)) {
-    // A delivery can race checkout persistence. Do not acknowledge it as lost/unknown.
     throw new RelayError('AMS_ORDER_NOT_READY', 503);
   }
   if (event.reference !== order.external_reference || event.paymentId !== order.ams_payment_id ||
       (event.sessionId && event.sessionId !== order.stripe_checkout_session_id) ||
-      (order.stripe_payment_intent_id && event.intentId !== order.stripe_payment_intent_id)) {
+      (order.stripe_payment_intent_id && event.intentId && event.intentId !== order.stripe_payment_intent_id)) {
     throw new RelayError('AMS_RELAY_ORDER_MISMATCH', 422);
   }
   if (order.stripe_checkout_session_id && event.live !== order.stripe_checkout_session_id.startsWith('cs_live_')) {
