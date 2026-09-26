@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE, verifySession } from '@/lib/session';
+// Keep this Edge entrypoint dependency-light; this name matches analytics-contract.ts.
+const SOURCE_COOKIE = 'mcda_registration_source';
 
 export async function middleware(request: NextRequest) {
-  // Only this exact endpoint uses per-order AMS callback authentication in its
-  // route handler. Never redirect an AMS POST to the browser sign-in page.
-  // Do not exempt all /api/webhooks or trust caller-supplied AMS headers here.
-  if (request.nextUrl.pathname === '/api/webhooks/ams' || request.nextUrl.pathname === '/webhooks/ams') return NextResponse.next();
+  // Exact public endpoints only. Each handler validates its own request/authentication.
+  if (request.nextUrl.pathname === '/api/webhooks/ams' || request.nextUrl.pathname === '/webhooks/ams' || request.nextUrl.pathname === '/api/analytics') return NextResponse.next();
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (token) {
@@ -23,7 +23,12 @@ export async function middleware(request: NextRequest) {
       { status: 401, headers: { 'Cache-Control': 'no-store' } },
     );
   }
-  return NextResponse.redirect(new URL('/auth/sign-in', request.url));
+  const response = NextResponse.redirect(new URL('/auth/sign-in', request.url));
+  // A new registration following an anonymous Premium-page navigation in 30 minutes.
+  if (request.nextUrl.pathname === '/billing' && request.method==='GET' && !request.headers.has('next-router-prefetch')) {
+    response.cookies.set(SOURCE_COOKIE,'premium',{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:1800});
+  }
+  return response;
 }
 
 export const config = {

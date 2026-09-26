@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' }, { status: 401 });
     }
 
-    return jsonWithSession({ ok: true, user: { id: user.id, email: user.email, name: user.name } }, { id: user.id, email: user.email, name: user.name });
+    return jsonWithSession({ ok: true, user: { id: user.id, email: user.email, name: user.name } }, { id: user.id, email: user.email, name: user.name }, 200, request);
   } catch (error) {
     console.error('Login failed', error);
     return NextResponse.json({ error: 'ไม่สามารถเข้าสู่ระบบได้' }, { status: 500 });

@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureAuthSchema } from '@/lib/auth-schema';
 import { getPool } from '@/lib/db';
 import { GOOGLE_STATE_COOKIE, SESSION_COOKIE, sessionCookieOptions, signSession } from '@/lib/session';
+import { recordRegistration, recordServerEvent } from '@/lib/analytics-events';
+import { SOURCE_COOKIE } from '@/lib/analytics-contract';
 
 type GoogleTokenResponse = { access_token?: string; error?: string; error_description?: string };
 type GoogleProfile = { sub?: string; email?: string; email_verified?: boolean; name?: string };
@@ -57,6 +59,7 @@ export async function GET(request: NextRequest) {
     const pool = getPool();
     const client = await pool.connect();
     let user: { id: string; email: string; name: string };
+    let newAccount = false;
 
     try {
       await client.query('BEGIN');
@@ -82,6 +85,7 @@ export async function GET(request: NextRequest) {
             [randomUUID(), email, name, profile.sub],
           );
           user = created.rows[0];
+          newAccount = true;
         }
       }
       await client.query('COMMIT');
@@ -92,8 +96,11 @@ export async function GET(request: NextRequest) {
       client.release();
     }
 
+    if (newAccount) await recordRegistration(user.id,request);
+    await recordServerEvent(user.id,'login',request);
     const response = NextResponse.redirect(new URL('/', baseUrl));
     response.cookies.delete(GOOGLE_STATE_COOKIE);
+    response.cookies.delete(SOURCE_COOKIE);
     response.cookies.set(SESSION_COOKIE, await signSession(user), sessionCookieOptions());
     return response;
   } catch (error) {
