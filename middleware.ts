@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE, verifySession } from '@/lib/session';
-import { SOURCE_COOKIE } from '@/lib/analytics-contract';
+// Keep this Edge entrypoint dependency-light; this name matches analytics-contract.ts.
+const SOURCE_COOKIE = 'mcda_registration_source';
 
 export async function middleware(request: NextRequest) {
   // Exact public endpoints only. Each handler validates its own request/authentication.
@@ -23,8 +24,7 @@ export async function middleware(request: NextRequest) {
     );
   }
   const response = NextResponse.redirect(new URL('/auth/sign-in', request.url));
-  // Registration attribution: an unauthenticated request for the Premium page,
-  // followed by a NEW account within 30 minutes. Existing accounts are never relabelled.
+  // A new registration following an anonymous Premium-page navigation in 30 minutes.
   if (request.nextUrl.pathname === '/billing' && request.method==='GET' && !request.headers.has('next-router-prefetch')) {
     response.cookies.set(SOURCE_COOKIE,'premium',{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:1800});
   }
