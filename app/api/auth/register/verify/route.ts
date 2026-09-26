@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       await client.query('DELETE FROM pending_registrations WHERE email = $1', [email]);
       await client.query('COMMIT');
       const user = created.rows[0];
-      return jsonWithSession({ ok: true, user }, user, 201);
+      return jsonWithSession({ ok: true, user }, user, 201, request);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SESSION_COOKIE, verifySession } from '@/lib/session';
+import { SOURCE_COOKIE } from '@/lib/analytics-contract';
 
 export async function middleware(request: NextRequest) {
-  // Only this exact endpoint uses per-order AMS callback authentication in its
-  // route handler. Never redirect an AMS POST to the browser sign-in page.
-  // Do not exempt all /api/webhooks or trust caller-supplied AMS headers here.
-  if (request.nextUrl.pathname === '/api/webhooks/ams') return NextResponse.next();
+  // Exact public endpoints only. Each handler validates its own request/authentication.
+  if (request.nextUrl.pathname === '/api/webhooks/ams' || request.nextUrl.pathname === '/api/analytics') return NextResponse.next();
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (token) {
@@ -23,7 +22,13 @@ export async function middleware(request: NextRequest) {
       { status: 401, headers: { 'Cache-Control': 'no-store' } },
     );
   }
-  return NextResponse.redirect(new URL('/auth/sign-in', request.url));
+  const response = NextResponse.redirect(new URL('/auth/sign-in', request.url));
+  // Registration attribution: an unauthenticated request for the Premium page,
+  // followed by a NEW account within 30 minutes. Existing accounts are never relabelled.
+  if (request.nextUrl.pathname === '/billing' && request.method==='GET' && !request.headers.has('next-router-prefetch')) {
+    response.cookies.set(SOURCE_COOKIE,'premium',{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:1800});
+  }
+  return response;
 }
 
 export const config = {

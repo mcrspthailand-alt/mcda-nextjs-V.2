@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUser } from '@/lib/request-user';
 import { authorizeAnalysis } from '@/lib/membership';
+import { recordServerEvent } from '@/lib/analytics-events';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    await recordServerEvent(user.id,'analysis_authorized',request,models);
     return NextResponse.json(
       { ok: true, entitlements: result.entitlements },
       { headers: { 'Cache-Control': 'no-store' } },

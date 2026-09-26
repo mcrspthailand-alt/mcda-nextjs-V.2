@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-type User = { id: string; email: string; name: string };
+type User = { id: string; email: string; name: string; isAdmin?: boolean };
 
 type Entitlements = {
   plan: 'free' | 'premium';
@@ -118,6 +118,7 @@ export default function AuthUserMenu() {
           </span>
         ) : null}
       </div>
+      {user.isAdmin ? <a href="/admin" style={{ border:'1px solid #cbd5e1',borderRadius:8,padding:'6px 9px',color:'#1e40af',textDecoration:'none',fontWeight:800 }}>Admin</a> : null}
       <button
         type="button"
         onClick={() => {
