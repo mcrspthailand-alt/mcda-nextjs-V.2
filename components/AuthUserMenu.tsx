@@ -74,7 +74,7 @@ export default function AuthUserMenu() {
       style={{
         position: 'fixed',
         top: 12,
-        right: 12,
+        right: 132,
         zIndex: 99999,
         display: 'flex',
         alignItems: 'center',
