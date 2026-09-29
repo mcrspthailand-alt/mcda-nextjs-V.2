@@ -590,6 +590,7 @@ const DYNAMIC_UI_PAIRS: Array<[string, string]> = [
   ['ชำระ Card / PromptPay', 'Pay by Card / PromptPay'],
   ['เปิด Premium', 'activate Premium'],
   ['ชำระเงิน', 'Payment'],
+  ['ชำระ ', 'Pay '],
   ['/ 10 ครั้ง · เหลือ', '/ 10 analyses · remaining'],
   ['ครั้ง', 'analyses'],
   ['รวม', 'Total'],
