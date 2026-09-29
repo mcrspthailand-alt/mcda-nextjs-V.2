@@ -579,9 +579,30 @@ const SITE_COMPLETION_PAIRS: Array<[string, string]> = [
   ['฿', ' THB'],
 ];
 
+
+const DYNAMIC_UI_PAIRS: Array<[string, string]> = [
+  ['ไม่สามารถตรวจสอบสลิปได้:', 'Unable to verify the payment slip:'],
+  ['สร้างรายการชำระเงิน', 'Created payment request for'],
+  ['บาทแล้ว', 'THB.'],
+  ['อัปเดต Premium เป็น', 'Premium updated to'],
+  ['วันแล้ว', 'days.'],
+  ['บาทสำเร็จ เปิดใช้งาน Premium แล้ว', 'THB confirmed. Premium access is active.'],
+  ['ชำระ Card / PromptPay', 'Pay by Card / PromptPay'],
+  ['เปิด Premium', 'activate Premium'],
+  ['ชำระเงิน', 'Payment'],
+  ['/ 10 ครั้ง · เหลือ', '/ 10 analyses · remaining'],
+  ['ครั้ง', 'analyses'],
+  ['รวม', 'Total'],
+  ['ผู้สมัคร', 'Registrants'],
+  ['คนในช่วงนี้ไม่ทราบแหล่งสมัคร', 'users in this period have an unknown registration source'],
+  ['คน', 'users'],
+  ['วัน', 'days'],
+  ['และ', 'and'],
+];
+
 function translateText(input: string) {
   let output = input;
-  for (const [th, en] of [...PAIRS, ...MCDA_ANALYSIS_PAIRS, ...SITE_COMPLETION_PAIRS, ...GLOBAL_UI_PAIRS].sort((a, b) => b[0].length - a[0].length)) output = output.split(th).join(en);
+  for (const [th, en] of [...PAIRS, ...MCDA_ANALYSIS_PAIRS, ...SITE_COMPLETION_PAIRS, ...DYNAMIC_UI_PAIRS, ...GLOBAL_UI_PAIRS].sort((a, b) => b[0].length - a[0].length)) output = output.split(th).join(en);
   return output;
 }
 
