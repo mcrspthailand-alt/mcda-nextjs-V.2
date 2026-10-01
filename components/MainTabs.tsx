@@ -3,12 +3,15 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import McdaApp from '@/components/McdaApp';
 import McdaHome from '@/components/McdaHome';
+import SampleGallery from '@/components/SampleGallery';
 
-type MainTab = 'home' | 'analysis';
+type MainTab = 'home' | 'analysis' | 'sample';
 
 function tabFromHash(): MainTab {
   if (typeof window === 'undefined') return 'home';
-  return window.location.hash === '#analysis' ? 'analysis' : 'home';
+  if (window.location.hash === '#analysis') return 'analysis';
+  if (window.location.hash === '#sample') return 'sample';
+  return 'home';
 }
 
 export default function MainTabs() {
@@ -27,13 +30,17 @@ export default function MainTabs() {
   }, []);
 
   useEffect(() => {
-    document.title = activeTab === 'analysis' ? 'MCDA Analysis' : 'หน้าหลัก | MCDA Analysis';
+    document.title = activeTab === 'analysis'
+      ? 'MCDA Analysis'
+      : activeTab === 'sample'
+        ? 'Sample | MCDA Analysis'
+        : 'หน้าหลัก | MCDA Analysis';
   }, [activeTab]);
 
   function selectTab(tab: MainTab) {
     if (tab === 'analysis') setAnalysisMounted(true);
     setActiveTab(tab);
-    const hash = tab === 'analysis' ? '#analysis' : '#home';
+    const hash = tab === 'analysis' ? '#analysis' : tab === 'sample' ? '#sample' : '#home';
     window.history.replaceState(null, '', hash);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -66,6 +73,18 @@ export default function MainTabs() {
           >
             MCDA Analysis
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'sample'}
+            onClick={() => selectTab('sample')}
+            style={{
+              ...styles.tabButton,
+              ...(activeTab === 'sample' ? styles.activeTab : {}),
+            }}
+          >
+            Sample
+          </button>
         </div>
       </div>
 
@@ -86,6 +105,14 @@ export default function MainTabs() {
           <McdaApp />
         </section>
       ) : null}
+
+      <section
+        role="tabpanel"
+        aria-label="Sample"
+        style={{ display: activeTab === 'sample' ? 'block' : 'none' }}
+      >
+        <SampleGallery />
+      </section>
     </div>
   );
 }
