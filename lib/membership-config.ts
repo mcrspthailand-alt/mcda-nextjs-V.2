@@ -1,5 +1,7 @@
 export const FALLBACK_WEEKLY_PLAN_PRICE_THB = '59.00';
 
+export type PaymentPriceChannel = 'easyslip' | 'stripe';
+
 export function normalizePlanAmount(value: unknown) {
   const raw = String(value ?? '').trim();
   const match = raw.match(/^(\d+)(?:\.(\d{1,2}))?$/);
@@ -10,8 +12,16 @@ export function normalizePlanAmount(value: unknown) {
   return `${whole}.${decimals}`;
 }
 
-export function getConfiguredWeeklyPlanPrice() {
+/** Server-side runtime prices. Existing callers use the primary Stripe channel. */
+export function getConfiguredWeeklyPlanPrice(channel: PaymentPriceChannel = 'stripe') {
+  const key = channel === 'easyslip'
+    ? 'MCDA_PREMIUM_WEEKLY_PRICE_THB_EASYSLIP'
+    : 'MCDA_PREMIUM_WEEKLY_PRICE_THB_STRIPE';
+  // Blank optional overrides fall back independently. Invalid nonblank amounts
+  // throw rather than silently charging a different price.
   return normalizePlanAmount(
-    process.env.MCDA_PREMIUM_WEEKLY_PRICE_THB || FALLBACK_WEEKLY_PLAN_PRICE_THB,
+    process.env[key]?.trim()
+      || process.env.MCDA_PREMIUM_WEEKLY_PRICE_THB?.trim()
+      || FALLBACK_WEEKLY_PLAN_PRICE_THB,
   );
 }
