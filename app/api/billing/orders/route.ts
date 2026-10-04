@@ -21,9 +21,16 @@ async function responseOrder(order: PaymentOrder | null) {
   const plan = await getWeeklyPlan();
   const publicOrder = publicPaymentOrder(order);
   const target = paymentPromptPayTarget();
-  // Hosted Checkout has its own price and remote payment session. Never offer
-  // a direct bank-transfer QR for that order (or an unclassified legacy order).
-  const payload = order?.payment_method === 'promptpay_slip' ? buildPromptPayPayload(order) : null;
+  // Preserve the former slip UI for legacy untagged orders without Stripe
+  // evidence. This is presentation only: never rewrite the saved amount/method,
+  // reuse these records for a new QR purchase, or change a remote checkout key.
+  if (publicOrder && !publicOrder.paymentMethod && order?.provider !== 'stripe'
+    && !order?.stripe_payment_intent_id && !order?.ams_payment_id) {
+    publicOrder.paymentMethod = 'promptpay_slip';
+  }
+  // New Hosted Checkout orders are tagged before the provider call and must
+  // never be offered a direct bank-transfer QR at their Stripe channel price.
+  const payload = order && publicOrder?.paymentMethod === 'promptpay_slip' ? buildPromptPayPayload(order) : null;
   const qrDataUrl = payload
     ? await QRCode.toDataURL(payload, {
         width: 420,
