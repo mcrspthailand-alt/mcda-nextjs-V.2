@@ -28,6 +28,7 @@ type PaymentOrder = {
   paidAt: string | null;
   expiresAt: string;
   createdAt: string;
+  paymentMethod: string | null;
 };
 
 type BillingState = {
@@ -42,6 +43,7 @@ type BillingState = {
   plan: {
     code: string;
     priceThb: string;
+    pricesThb: { easyslip: string; stripe: string };
     durationDays: number;
     title: string;
   };
@@ -67,6 +69,7 @@ function formatThaiDate(value: string | null) {
 }
 
 function formatThb(value: string | null | undefined, forceTwoDecimals = false) {
+  if (!value?.trim()) return '-';
   const amount = Number(value);
   if (!Number.isFinite(amount)) return value || '-';
   const hasSatang = Math.abs(amount - Math.trunc(amount)) > 0.000001;
@@ -129,11 +132,15 @@ export default function BillingPage() {
   const promptPayKind = state?.promptPayType === 'national_id'
     ? 'เลขบัตรประชาชน / เลขประจำตัวผู้เสียภาษี'
     : 'เบอร์มือถือ';
-  const planPrice = state?.plan.priceThb ?? state?.entitlements.weeklyPriceThb ?? '';
-  const planPriceLabel = formatThb(planPrice);
+  const legacyPlanPrice = state?.plan.priceThb ?? state?.entitlements.weeklyPriceThb ?? '';
+  const easySlipPrice = state?.plan.pricesThb?.easyslip ?? legacyPlanPrice;
+  const stripePrice = state?.plan.pricesThb?.stripe ?? legacyPlanPrice;
+  const easySlipPriceLabel = formatThb(easySlipPrice);
+  const stripePriceLabel = formatThb(stripePrice);
   const planDays = state?.plan.durationDays ?? 7;
-  const orderAmount = state?.order?.amount ?? planPrice;
+  const orderAmount = state?.order?.amount ?? easySlipPrice;
   const orderAmountMoney = formatThb(orderAmount, true);
+  const slipOrderPayable = orderPayable && state?.order?.paymentMethod === 'promptpay_slip';
 
   async function loadBilling() {
     setLoading(true);
@@ -199,8 +206,11 @@ export default function BillingPage() {
 
 
   async function createOrder(): Promise<PaymentOrder | null> {
+    if (checkoutInFlight.current || creating || verifying || savingPlan) return null;
+    checkoutInFlight.current = true;
     setCreating(true);
     setMessage('');
+    setSlip(null);
     setVerificationFeedback(null);
     try {
       const response = await fetch('/api/billing/orders', { method: 'POST' });
@@ -208,12 +218,13 @@ export default function BillingPage() {
       if (!response.ok) throw new Error(billingErrorMessage(data, 'สร้างรายการไม่สำเร็จ'));
       if (!data.entitlements || !data.plan) throw new Error('ข้อมูลสมาชิกจากเซิร์ฟเวอร์ไม่ครบ');
       setState(data);
-      setMessage(`สร้างรายการชำระเงิน ${formatThb(data?.order?.amount ?? data?.plan?.priceThb)} บาทแล้ว`);
+      setMessage(`สร้างรายการ PromptPay + EasySlip ${formatThb(data?.order?.amount ?? data?.plan?.pricesThb?.easyslip)} บาทแล้ว`);
       return data.order ?? null;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'สร้างรายการไม่สำเร็จ');
       return null;
     } finally {
+      checkoutInFlight.current = false;
       setCreating(false);
     }
   }
@@ -274,7 +285,7 @@ export default function BillingPage() {
       if (!response.ok) throw new Error(billingErrorMessage(data, 'บันทึกแพ็กเกจไม่สำเร็จ'));
       if (!data.plan) throw new Error('ข้อมูลแพ็กเกจจากเซิร์ฟเวอร์ไม่ครบ');
       await loadBilling();
-      setMessage(`อัปเดต Premium เป็น ${formatThb(data.plan.priceThb)} บาท / ${data.plan.durationDays} วันแล้ว`);
+      setMessage(`อัปเดตระยะเวลา Premium เป็น ${data.plan.durationDays} วันแล้ว ราคายังคงแยกตามช่องทางชำระเงิน`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'บันทึกแพ็กเกจไม่สำเร็จ');
     } finally {
@@ -283,10 +294,10 @@ export default function BillingPage() {
   }
 
   async function verifySlip() {
-    if (!state?.order || !slip) {
+    if (!state?.order || !slip || !slipOrderPayable) {
       setVerificationFeedback({
         kind: 'error',
-        text: 'กรุณาเลือกไฟล์สลิปก่อนกดตรวจสอบ',
+        text: 'กรุณาสร้างรายการ PromptPay + EasySlip และเลือกไฟล์สลิปก่อนกดตรวจสอบ',
         code: 'INVALID_SLIP',
       });
       return;
@@ -344,7 +355,7 @@ export default function BillingPage() {
         <div>
           <div style={styles.eyebrow}>MCDA MEMBERSHIP</div>
           <h1 style={styles.title}>สมาชิกและแพ็กเกจใช้งาน</h1>
-          <p style={styles.subtitle}>Free สำหรับงานพื้นฐาน หรือ Premium {planPriceLabel} บาท / {planDays} วัน เพื่อปลดล็อกทุกโมเดลและไม่จำกัดจำนวนการวิเคราะห์</p>
+          <p style={styles.subtitle}>Free สำหรับงานพื้นฐาน หรือ Premium {planDays} วัน เพื่อปลดล็อกทุกโมเดลและไม่จำกัดจำนวนการวิเคราะห์ เลือกราคาตามช่องทางชำระเงินด้านล่าง</p>
         </div>
         <Link href="/" style={styles.backLink}>← กลับหน้าวิเคราะห์</Link>
       </div>
@@ -382,8 +393,9 @@ export default function BillingPage() {
               <h2 style={styles.planTitle}>MCDA Premium Weekly</h2>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <strong style={styles.price}>{planPriceLabel} บาท</strong>
-              <div style={styles.muted}>{planDays} วันนับจากเวลาชำระสำเร็จ</div>
+              <div><span style={styles.muted}>EasySlip </span><strong style={styles.price}>{easySlipPriceLabel} บาท</strong></div>
+              <div><span style={styles.muted}>Stripe </span><strong style={styles.price}>{stripePriceLabel} บาท</strong></div>
+              <div style={styles.muted}>{planDays} วันนับจากเวลาชำระสำเร็จ · สิทธิ์เท่ากันทั้งสองช่องทาง</div>
             </div>
           </div>
           <ul style={styles.list}>
@@ -396,16 +408,21 @@ export default function BillingPage() {
               Premium ใช้งานอยู่ · สิ้นสุด {formatThaiDate(state.entitlements.premiumUntil)}
             </div>
           ) : (
-            <div>
+            <div style={{ display: 'grid', gap: 4 }}>
               {state?.stripeEnabled ? (
                 <button type="button" onClick={startHostedCheckout} disabled={creating || verifying || savingPlan} style={styles.primaryButton}>
-                  {creating ? 'กำลังเปิดหน้าชำระเงิน…' : `ชำระ Card / PromptPay ${planPriceLabel} บาท / Premium ${planDays} วัน`}
+                  {creating ? 'กำลังเปิดหน้าชำระเงิน…' : `Stripe: Card / PromptPay ${stripePriceLabel} บาท / ${planDays} วัน`}
                 </button>
-              ) : (
-                <button type="button" onClick={() => void createOrder()} disabled={creating} style={styles.primaryButton}>
-                  {creating ? 'กำลังสร้างรายการ…' : `ชำระ ${planPriceLabel} บาท / เปิด Premium ${planDays} วัน`}
+              ) : null}
+              {state?.paymentConfigured ? (
+                <button type="button" onClick={() => void createOrder()} disabled={creating || verifying || savingPlan} style={styles.primaryButton}>
+                  {creating ? 'กำลังสร้างรายการ…' : `PromptPay + EasySlip ${easySlipPriceLabel} บาท / ${planDays} วัน`}
                 </button>
-              )}
+              ) : null}
+              <div style={styles.muted}>EasySlip: โอนผ่าน QR และอัปโหลดสลิป · Stripe: ชำระผ่านหน้าชำระเงิน ไม่ต้องอัปโหลดสลิป</div>
+              {!state?.stripeEnabled && !state?.paymentConfigured ? (
+                <div style={styles.warning}>ยังไม่มีช่องทางชำระเงินที่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล</div>
+              ) : null}
             </div>
           )}
         </article>
@@ -415,7 +432,9 @@ export default function BillingPage() {
         <section style={{ ...styles.card, marginBottom: 18 }}>
           <span style={styles.premiumBadge}>ADMIN PLAN</span>
           <h2 style={styles.planTitle}>กำหนดระยะเวลา Premium</h2>
-          <p style={styles.muted}>ราคาดึงจาก MCDA_PREMIUM_WEEKLY_PRICE_THB ส่วนระยะเวลาแก้ไขได้โดยไม่ต้อง deploy ใหม่</p>
+          <p style={{ ...styles.muted, overflowWrap: 'anywhere' }}>
+            ราคา EasySlip ใช้ <code>MCDA_PREMIUM_WEEKLY_PRICE_THB_EASYSLIP</code> และราคา Stripe ใช้ <code>MCDA_PREMIUM_WEEKLY_PRICE_THB_STRIPE</code> ถ้าไม่ตั้งค่าช่องทางนั้นจะใช้ <code>MCDA_PREMIUM_WEEKLY_PRICE_THB</code> ส่วนระยะเวลาแก้ไขได้โดยไม่ต้อง deploy ใหม่
+          </p>
           <form onSubmit={updatePlan} style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap', marginTop: 12 }}>
             <label style={styles.fileLabel}>
               ระยะเวลา (วัน)
@@ -433,8 +452,9 @@ export default function BillingPage() {
           <div style={styles.paymentHeading}>
             <div>
               <span style={styles.premiumBadge}>PAYMENT</span>
-              <h2 style={styles.planTitle}>ชำระเงิน {orderAmountMoney} THB</h2>
+              <h2 style={styles.planTitle}>ยอดของรายการนี้ {orderAmountMoney} THB</h2>
               <div style={styles.muted}>Order: {state.order.externalReference}</div>
+              <div style={styles.muted}>ช่องทาง: {state.order.paymentMethod === 'promptpay_slip' ? 'PromptPay + EasySlip' : state.order.paymentMethod === 'stripe_hosted_checkout' ? 'Stripe Hosted Checkout' : 'รายการเดิม'}</div>
             </div>
             <div style={styles.orderStatus}>{state.order.status}</div>
           </div>
@@ -446,10 +466,10 @@ export default function BillingPage() {
                 ระบบจะพาไปหน้าชำระเงินของ Stripe ผ่าน AMS Gateway รองรับ Card และ PromptPay ตามสิทธิ์ที่เปิดใช้งาน
               </div>
               <button type="button" onClick={startHostedCheckout} disabled={creating || verifying || savingPlan} style={styles.primaryButton}>
-                {creating ? 'กำลังเปิดหน้าชำระเงิน…' : 'ไปหน้าชำระเงิน Card / PromptPay'}
+                {creating ? 'กำลังเปิดหน้าชำระเงิน…' : `สร้างรายการ Stripe ใหม่ ${stripePriceLabel} บาท / ${planDays} วัน`}
               </button>
               <div style={styles.muted}>
-                ทุกครั้งที่กดจะเริ่มรายการใหม่และเลิกใช้รายการค้างใน MCDA โดยไม่ลบประวัติ ลิงก์ Stripe เดิมอาจยังไม่หมดอายุ โปรดใช้เฉพาะลิงก์ล่าสุดและห้ามชำระซ้ำหากถูกตัดเงินแล้ว
+                ทุกครั้งที่กดจะเริ่มรายการใหม่ตามราคา Stripe และเลิกใช้รายการค้างใน MCDA โดยไม่ลบประวัติ ลิงก์ Stripe เดิมอาจยังไม่หมดอายุ โปรดใช้เฉพาะลิงก์ล่าสุดและห้ามชำระซ้ำหากถูกตัดเงินแล้ว
               </div>
               <div style={styles.muted}>
                 การกลับจากหน้าชำระเงินยังไม่ถือว่าจ่ายสำเร็จ ระบบจะเปิด Premium หลังได้รับ webhook จาก AMS เท่านั้น
@@ -457,9 +477,9 @@ export default function BillingPage() {
             </div>
           ) : null}
 
-          {state.paymentConfigured && orderPayable ? (
+          {state.paymentConfigured && slipOrderPayable ? (
             <div style={{ marginBottom: 14, fontWeight: 800, color: '#667085' }}>
-              หรือชำระด้วย Standard PromptPay QR และอัปโหลดสลิปด้านล่าง
+              ชำระด้วย Standard PromptPay QR และตรวจสลิปผ่าน EasySlip
             </div>
           ) : null}
 
@@ -469,7 +489,7 @@ export default function BillingPage() {
             </div>
           ) : null}
 
-          {state.qrDataUrl && orderPayable ? (
+          {state.qrDataUrl && slipOrderPayable ? (
             <div style={styles.paymentGrid}>
               <div style={styles.qrWrap}>
                 <img src={state.qrDataUrl} alt={`Standard Thai PromptPay QR สำหรับชำระ MCDA Premium ${orderAmountMoney} บาท`} style={styles.qr} />
@@ -485,7 +505,7 @@ export default function BillingPage() {
                   <li>ระบบจะส่งสลิปไปตรวจผ่าน AMS Payment Gateway และเปิด Premium หลังผ่านเงื่อนไข</li>
                 </ol>
                 <div style={styles.refBox}>
-                  <div><b>ช่องทาง:</b> Standard Thai PromptPay QR</div>
+                  <div><b>ช่องทาง:</b> Standard Thai PromptPay QR + EasySlip</div>
                   <div><b>ประเภท PromptPay:</b> {state.promptPayLabel || promptPayKind}</div>
                   <div><b>บัญชีรับเงิน:</b> {state.promptPayAccount || '-'}</div>
                   <div><b>Order reference:</b> {state.order.externalReference}</div>
@@ -495,7 +515,7 @@ export default function BillingPage() {
             </div>
           ) : null}
 
-          {orderPayable ? (
+          {slipOrderPayable ? (
             <div style={styles.uploadBox}>
               {verificationFeedback ? (
                 <div
@@ -532,16 +552,19 @@ export default function BillingPage() {
                 {verifying ? 'กำลังตรวจสอบสลิป…' : 'ตรวจสอบสลิปและเปิด Premium'}
               </button>
             </div>
-          ) : (
-            <button type="button" onClick={() => void createOrder()} disabled={creating} style={styles.primaryButton}>
-              สร้างรายการชำระเงินใหม่
-            </button>
-          )}
+          ) : state.paymentConfigured ? (
+            <div>
+              <button type="button" onClick={() => void createOrder()} disabled={creating || verifying || savingPlan} style={styles.primaryButton}>
+                {creating ? 'กำลังสร้างรายการ…' : `สร้างรายการ PromptPay + EasySlip ${easySlipPriceLabel} บาท / ${planDays} วัน`}
+              </button>
+              <div style={styles.muted}>เป็นรายการแยกจาก Stripe หากชำระเงินแล้วให้ตรวจสอบสถานะก่อน ไม่ต้องชำระซ้ำ</div>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
       <section style={styles.note}>
-        ราคา Premium ใช้ MCDA_PREMIUM_WEEKLY_PRICE_THB เป็นแหล่งอ้างอิงเดียวทั้ง Hosted Checkout และ Standard Thai PromptPay QR ส่วนระยะเวลาแพ็กเกจเก็บใน PostgreSQL และแก้ได้โดยผู้ดูแลระบบ ช่องทางหลักใช้ AMS Hosted Checkout: MCDA ส่ง Order ไป AMS, AMS สร้าง Stripe Checkout และ redirect ผู้ใช้ไปชำระเงิน จากนั้น Stripe ส่ง webhook เข้า AMS และ AMS relay กลับ MCDA เพื่อเปิด Premium ส่วน Standard Thai PromptPay QR + อัปโหลดสลิปยังคงเป็นช่องทางสำรอง
+        ราคาแยกตามช่องทาง: PromptPay QR + อัปโหลดสลิปใช้ราคา EasySlip ส่วน Card / PromptPay บนหน้า Stripe ใช้ราคา Stripe ทั้งสองช่องทางได้รับสิทธิ์ Premium และระยะเวลาเท่ากัน ยอดที่ใช้ยืนยันการชำระเงินยึดตาม Order ที่สร้างไว้ ไม่เปลี่ยนย้อนหลังเมื่อผู้ดูแลปรับราคา ระบบเปิด Premium หลังตรวจสลิปผ่านหรือได้รับ webhook ที่ตรวจสอบแล้วจาก AMS เท่านั้น
       </section>
     </main>
   );
@@ -594,6 +617,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
+    flexWrap: 'wrap',
   },
   paymentHeading: {
     display: 'flex',
