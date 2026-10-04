@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { getPool } from '@/lib/db';
 import { ensureMembershipSchema } from '@/lib/membership-schema';
+import { getConfiguredWeeklyPlanPrice } from '@/lib/membership-config';
 import {
   WEEKLY_PLAN_CODE,
   getWeeklyPlan,
@@ -239,6 +240,7 @@ export async function findRecentPayableOrder(userId: string, plan: MembershipPla
         AND currency = 'THB'
         AND amount = $2::numeric
         AND (plan_code = $3 OR plan_code IS NULL)
+        AND payment_method = 'promptpay_slip'
       ORDER BY created_at DESC
       LIMIT 1
     `,
@@ -261,12 +263,11 @@ export async function findLatestPaymentOrder(userId: string, plan: MembershipPla
       FROM payment_orders
       WHERE user_id = $1
         AND currency = 'THB'
-        AND amount = $2::numeric
-        AND (plan_code = $3 OR plan_code IS NULL)
+        AND (plan_code = $2 OR plan_code IS NULL)
       ORDER BY created_at DESC
       LIMIT 1
     `,
-    [userId, plan.priceThb, plan.code],
+    [userId, plan.code],
   );
   return result.rows[0] ?? null;
 }
@@ -274,12 +275,15 @@ export async function findLatestPaymentOrder(userId: string, plan: MembershipPla
 export async function createWeeklyPaymentOrder(userId: string) {
   await ensureMembershipSchema();
   const pool = getPool();
-  const plan = await getWeeklyPlan();
+  const plan = {
+    ...await getWeeklyPlan(),
+    priceThb: getConfiguredWeeklyPlanPrice('easyslip'),
+  };
   if (!plan.isActive) throw new Error('Premium plan is not active');
 
-  // A payable QR must always reflect the current configured package price.
-  // Retire any still-payable order created with a previous configured amount so it
-  // cannot be reused accidentally after the Environment price changes.
+  // Only retire unpaid direct-QR orders with an obsolete EasySlip price.
+  // A different Stripe price must never retire/reuse a Hosted Checkout order.
+  // Legacy untagged orders remain available for reconciliation, not QR reuse.
   await pool.query(
     `
       UPDATE payment_orders
@@ -287,10 +291,13 @@ export async function createWeeklyPaymentOrder(userId: string) {
           updated_at = NOW()
       WHERE user_id = $1
         AND status = 'awaiting_payment'
+        AND paid_at IS NULL
         AND expires_at > NOW()
+        AND payment_method = 'promptpay_slip'
+        AND (plan_code = $3 OR plan_code IS NULL)
         AND (currency <> 'THB' OR amount <> $2::numeric)
     `,
-    [userId, plan.priceThb],
+    [userId, plan.priceThb, plan.code],
   );
 
   const existing = await findRecentPayableOrder(userId, plan);
@@ -309,11 +316,13 @@ export async function createWeeklyPaymentOrder(userId: string) {
     `
       INSERT INTO payment_orders (
         id, user_id, external_reference, payment_reference, ref1, ref2,
-        amount, currency, status, expires_at, plan_code, plan_duration_days, ams_webhook_auth_version
+        amount, currency, status, expires_at, plan_code, plan_duration_days, ams_webhook_auth_version,
+        payment_method
       )
       VALUES (
         $1, $2, $3, $4, $5, $6,
-        $7::numeric, 'THB', 'awaiting_payment', NOW() + INTERVAL '24 hours', $8, $9, 1
+        $7::numeric, 'THB', 'awaiting_payment', NOW() + INTERVAL '24 hours', $8, $9, 1,
+        'promptpay_slip'
       )
       RETURNING
         id, user_id, external_reference, payment_reference, ref1, ref2,
@@ -351,6 +360,10 @@ export function publicPaymentPlan(plan: MembershipPlan) {
   return {
     code: plan.code || WEEKLY_PLAN_CODE,
     priceThb: plan.priceThb,
+    pricesThb: {
+      easyslip: getConfiguredWeeklyPlanPrice('easyslip'),
+      stripe: getConfiguredWeeklyPlanPrice('stripe'),
+    },
     durationDays: plan.durationDays,
     title: plan.title,
   };
