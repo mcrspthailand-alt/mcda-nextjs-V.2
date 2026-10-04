@@ -34,8 +34,9 @@ The application requires a signed-in account.
 
 ### Premium Weekly
 
-- Price is controlled by `MCDA_PREMIUM_WEEKLY_PRICE_THB` (defaults to 59.00 THB).
-- Duration is stored in PostgreSQL `membership_plans` and authorized admins can change it from `/billing` without redeploying.
+- Independent prices: `MCDA_PREMIUM_WEEKLY_PRICE_THB_EASYSLIP` for direct QR/slip, and `MCDA_PREMIUM_WEEKLY_PRICE_THB_STRIPE` for Hosted Checkout.
+- Each unset/blank channel price falls back to `MCDA_PREMIUM_WEEKLY_PRICE_THB`, then 59.00 THB.
+- Duration is stored in PostgreSQL `membership_plans` and authorized admins can change it from `/billing` without redeploying. Both channels grant the same duration and features.
 - All 13 analysis models unlocked.
 - Unlimited analysis operations while the subscription is active.
 
@@ -60,9 +61,32 @@ AMS_STRIPE_PAYMENT_METHODS=card,promptpay
 # Accounts allowed to edit Premium duration from /billing
 MCDA_ADMIN_EMAILS=admin@example.com
 
-# Premium price used by all order and entitlement flows
+# Backward-compatible common fallback
 MCDA_PREMIUM_WEEKLY_PRICE_THB=59.00
+
+# Optional independent channel prices (blank = use the common fallback)
+MCDA_PREMIUM_WEEKLY_PRICE_THB_EASYSLIP=
+MCDA_PREMIUM_WEEKLY_PRICE_THB_STRIPE=
 ```
+
+### Different EasySlip and Stripe prices
+
+For example, to charge **59 THB via EasySlip** and **69 THB via Stripe**, set these two values in the **MCDA app service's Environment** in Easypanel (not in the AMS Gateway service):
+
+```env
+MCDA_PREMIUM_WEEKLY_PRICE_THB_EASYSLIP=59.00
+MCDA_PREMIUM_WEEKLY_PRICE_THB_STRIPE=69.00
+```
+
+These are illustrative prices, not automatic production changes. Restart/redeploy the MCDA app with the new environment values after deploying this code. No Stripe key, AMS service price change, or database migration is required for the split-price settings.
+
+`EASYSLIP` means the direct bank-transfer PromptPay QR with an uploaded slip verified by AMS/EasySlip. `STRIPE` applies to **both card and PromptPay inside Stripe Hosted Checkout**. It is the checkout channel, not the bank payment method, that selects the price.
+
+The precedence is independent for each channel: nonblank channel override, then nonblank legacy/common variable, then `59.00`. Prices must be positive decimal THB amounts with at most two decimal places. An invalid nonblank value fails validation instead of silently charging a fallback price. Keep these variables server-side; do not prefix them with `NEXT_PUBLIC_`.
+
+The billing API exposes `plan.pricesThb.easyslip` and `plan.pricesThb.stripe`; the billing page shows both prices and separate payment buttons. Existing `plan.priceThb` and entitlement `weeklyPriceThb` fields continue to represent the primary Stripe price for compatibility.
+
+Each order stores its selected channel price at creation. QR amounts, AMS expected amounts, Checkout requests, and webhook verification use the stored order amount, not a newly changed environment value. Same-click Stripe retries retain their original order amount and idempotency key. New EasySlip orders use `payment_method=promptpay_slip`; new Stripe orders use `stripe_hosted_checkout` before any provider call. Direct QR orders cannot be sent to the Stripe Checkout endpoint, and Stripe orders are never reused as direct QR orders. Existing payment history and paid amounts are not rewritten.
 
 MCDA **must not** be configured with `STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, or `STRIPE_WEBHOOK_SECRET`.
 
@@ -93,7 +117,7 @@ The relay is deduplicated using the Stripe event ID. MCDA also verifies the serv
 
 ### Direct PromptPay + slip fallback
 
-The existing Standard Thai PromptPay QR + AMS/EasySlip verification remains available as a fallback payment path.
+The Standard Thai PromptPay QR + AMS/EasySlip verification is a separate payment choice with its own configured price.
 
 Preferred PromptPay receiver configuration:
 

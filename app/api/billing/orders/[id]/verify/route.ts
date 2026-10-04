@@ -40,6 +40,7 @@ type OrderRow = {
   expires_at: Date;
   plan_code: string | null;
   plan_duration_days: number | null;
+  payment_method: string | null;
 };
 
 type RawReceiver = {
@@ -239,7 +240,7 @@ export async function POST(
       SELECT
         id, user_id, external_reference, payment_reference, ref1, ref2,
         amount::text, currency, status, provider_reference, provider_response,
-        expires_at, plan_code, plan_duration_days
+        expires_at, plan_code, plan_duration_days, payment_method
       FROM payment_orders
       WHERE id = $1 AND user_id = $2
       LIMIT 1
@@ -257,6 +258,17 @@ export async function POST(
 
   if (order.status === 'paid') {
     return NextResponse.json({ ok: true, entitlements: await getEntitlements(user.id) });
+  }
+
+  // Enforce the selected price channel on the server, not just the upload UI.
+  // A Stripe order must be confirmed by its Stripe/AMS webhook, even when its
+  // configured price happens to be lower than the EasySlip price.
+  if (order.payment_method === 'stripe_hosted_checkout') {
+    return NextResponse.json(
+      { error: { code: 'ORDER_PAYMENT_CHANNEL_MISMATCH',
+        message: 'รายการนี้ชำระผ่าน Stripe และยืนยันด้วย webhook ไม่รับสลิป กรุณาตรวจสอบสถานะรายการเดิม' } },
+      { status: 409 },
+    );
   }
 
   const expired = new Date(order.expires_at).getTime() <= Date.now();
@@ -451,7 +463,7 @@ export async function POST(
         SELECT
           id, user_id, external_reference, payment_reference, ref1, ref2,
           amount::text, currency, status, provider_reference, provider_response,
-          expires_at
+          expires_at, plan_code, plan_duration_days, payment_method
         FROM payment_orders
         WHERE id = $1 AND user_id = $2
         FOR UPDATE
@@ -471,6 +483,14 @@ export async function POST(
     if (locked.status === 'paid') {
       await client.query('COMMIT');
       return NextResponse.json({ ok: true, entitlements: await getEntitlements(user.id) });
+    }
+
+    if (locked.payment_method === 'stripe_hosted_checkout') {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: { code: 'ORDER_PAYMENT_CHANNEL_MISMATCH', message: 'รายการนี้ต้องยืนยันผ่าน Stripe webhook' } },
+        { status: 409 },
+      );
     }
 
     if (locked.status !== 'awaiting_payment' || new Date(locked.expires_at).getTime() <= Date.now()) {

@@ -4,13 +4,17 @@ The MCDA billing flow uses **standard Thai PromptPay Tag 29 EMVCo payloads**. Th
 
 ## Environment configuration
 
-Premium price:
+Direct PromptPay + EasySlip price:
 
 ```env
+MCDA_PREMIUM_WEEKLY_PRICE_THB_EASYSLIP=59.00
+# Optional common fallback when the channel-specific value is unset/blank:
 MCDA_PREMIUM_WEEKLY_PRICE_THB=59.00
 ```
 
-If this variable is omitted, the application defaults to `59.00` THB. The value must be positive and may contain up to 2 decimal places, for example `1.00`, `49`, `59.00`, or `79.50`.
+The EasySlip override takes precedence over the common fallback, then the application defaults to `59.00` THB. The value must be positive and may contain up to 2 decimal places, for example `1.00`, `49`, `59.00`, or `79.50`.
+
+`MCDA_PREMIUM_WEEKLY_PRICE_THB_STRIPE` separately configures card **and PromptPay inside Stripe Hosted Checkout**. A PromptPay payment inside Stripe does not use the EasySlip price. See the README payment configuration section for both channel settings and Easypanel deployment instructions.
 
 Preferred PromptPay receiver configuration:
 
@@ -46,7 +50,7 @@ MCDA_PROMPTPAY_NATIONAL_ID=
 - CRC: CRC16-CCITT over the complete payload through `6304`
 - The raw payload is passed directly to the `qrcode` encoder with a quiet zone; no pipe prefix, carriage returns, URL encoding, or merchant-specific wrapper is added.
 
-For every MCDA payment order, `external_reference` (for example `MCDA...`) is embedded in the QR as `62.05` immediately before field `63`. CRC is recalculated after the reference is added.
+For every direct-QR payment order, `external_reference` (for example `MCDA...`) is embedded in the QR as `62.05` immediately before field `63`. CRC is recalculated after the reference is added. Stripe orders are not offered a direct bank-transfer QR.
 
 Example structure:
 
@@ -54,9 +58,9 @@ Example structure:
 ... + 54 <length> <ORDER_AMOUNT> + 62 <length> 05 <length> <ORDER_REFERENCE> + 6304 + <CRC16>
 ```
 
-The Premium price environment setting is the source of truth when creating a payable order. If `MCDA_PREMIUM_WEEKLY_PRICE_THB` is changed and the service is redeployed/restarted, an existing non-expired `awaiting_payment` order with a different amount is marked `superseded` and will not be reused. The next payment action creates a new order, new order reference, and new QR using the current configured price. This prevents a stale QR from continuing to request the previous amount.
+The effective EasySlip price is the source of truth when creating a new direct-QR order. After changing the environment and restarting/redeploying, the next direct-QR creation retires non-expired, unpaid `awaiting_payment` orders tagged `promptpay_slip` whose amount differs. It then reuses a matching direct-QR order or creates a new order, reference, and QR at the current EasySlip price. Stripe-priced orders and legacy untagged orders are not reused or retired by this price check. Paid, processing, and uncertain history is not repriced.
 
-Once a payment order is created at the current price, its stored amount remains the source of truth for that order's QR and AMS `expected_amount` until it is paid, expires, fails, or is superseded by a later price change.
+Once a payment order is created, its stored amount remains the source of truth for that order's QR and AMS `expected_amount`. Changing configuration does not rewrite existing order amounts. Legacy untagged records remain in payment history for reconciliation; never pay again just because a new QR is offered.
 
 The implementation keeps the existing AMS client-guide point-of-initiation behavior and changes the PromptPay proxy sub-tag/value according to the configured receiver type.
 
