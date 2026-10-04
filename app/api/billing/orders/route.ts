@@ -21,7 +21,9 @@ async function responseOrder(order: PaymentOrder | null) {
   const plan = await getWeeklyPlan();
   const publicOrder = publicPaymentOrder(order);
   const target = paymentPromptPayTarget();
-  const payload = order ? buildPromptPayPayload(order) : null;
+  // Hosted Checkout has its own price and remote payment session. Never offer
+  // a direct bank-transfer QR for that order (or an unclassified legacy order).
+  const payload = order?.payment_method === 'promptpay_slip' ? buildPromptPayPayload(order) : null;
   const qrDataUrl = payload
     ? await QRCode.toDataURL(payload, {
         width: 420,
