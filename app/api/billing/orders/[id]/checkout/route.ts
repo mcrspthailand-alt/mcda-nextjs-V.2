@@ -21,6 +21,7 @@ type OrderRow = {
   stripe_checkout_session_id: string | null;
   ams_payment_id: string | null;
   ams_webhook_auth_version: number;
+  payment_method: string | null;
 };
 
 function appOrigin() {
@@ -65,7 +66,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const pool = getPool();
     const result = await pool.query<OrderRow>(
       `SELECT id, user_id, external_reference, amount::text, currency, status,
-              expires_at, stripe_checkout_session_id, ams_payment_id, ams_webhook_auth_version
+              expires_at, stripe_checkout_session_id, ams_payment_id, ams_webhook_auth_version,
+              payment_method
        FROM payment_orders WHERE id = $1 AND user_id = $2 LIMIT 1`,
       [id, user.id],
     );
@@ -79,6 +81,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     }
     if (order.currency !== 'THB') {
       return json({ error: { code: 'ORDER_CURRENCY_INVALID', message: 'สกุลเงินของ Order ไม่รองรับ' } }, 409);
+    }
+    // New direct-QR orders carry the EasySlip price and cannot be converted to
+    // Stripe. Legacy Stripe orders keep their saved amount and idempotency key.
+    if (order.payment_method === 'promptpay_slip') {
+      return json({ error: { code: 'ORDER_PAYMENT_CHANNEL_MISMATCH', retryable: false,
+        message: 'รายการนี้สำหรับ PromptPay + EasySlip กรุณากดชำระผ่าน Stripe เพื่อสร้างรายการตามราคาของช่องทางนั้น' } }, 409);
     }
     // An older order may already have a remote session even when a timeout left
     // local IDs null. Never change its payload/key to install callback auth.
