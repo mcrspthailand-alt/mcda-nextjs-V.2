@@ -70,17 +70,21 @@ test('deep links select Analysis/Sample and unknown hashes fall back to home', (
   assert.equal(tabFromHash(''), 'home');
   assert.equal(tabFromHash('#invalid'), 'home');
 });
-test('history push/replace updates tabs without hashchange and preserves router state', () => {
+test('history push/replace updates tabs without hashchange and preserves router state', async () => {
   const window = browser();
   const selected = [];
   const stop = subscribeToMainTab(window, tab => selected.push(tab));
   const state = window.history.state;
   window.history.pushState(state, '', '/#sample');
+  assert.deepEqual(selected, ['home'], 'do not update React during a Next insertion effect');
+  await Promise.resolve();
   window.history.replaceState(state, '', '/#analysis');
+  await Promise.resolve();
   assert.deepEqual(selected, ['home', 'sample', 'analysis']);
   assert.equal(window.history.state, state);
   stop();
   window.history.replaceState(state, '', '/#home');
+  await Promise.resolve();
   assert.equal(selected.length, 3);
 });
 test('Back/Forward, pageshow and native hashchange restore the selected tab', () => {
@@ -93,7 +97,7 @@ test('Back/Forward, pageshow and native hashchange restore the selected tab', ()
   }
   assert.deepEqual(selected, ['home', 'sample', 'analysis', 'home']);
 });
-test('returning from another route, including late Next history updates, synchronizes once', () => {
+test('returning from another route, including late Next history updates, synchronizes once', async () => {
   const window = browser();
   window.location.pathname = '/billing';
   const selected = [];
@@ -104,12 +108,14 @@ test('returning from another route, including late Next history updates, synchro
   let nextCalls = 0;
   window.history.pushState = function (...args) { nextCalls++; observed.apply(this, args); };
   window.history.pushState(window.history.state, '', '/#sample');
+  await Promise.resolve();
   assert.deepEqual(selected, ['sample']);
   stop();
   for (let i = 0; i < 10; i++) {
     const values = [];
     const end = subscribeToMainTab(window, tab => values.push(tab));
     window.history.pushState(window.history.state, '', '/#analysis');
+    await Promise.resolve();
     assert.equal(values.length, 2);
     end();
   }

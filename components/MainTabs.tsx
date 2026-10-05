@@ -27,8 +27,9 @@ export default function MainTabs() {
     if (tab === 'analysis') setAnalysisMounted(true);
     setActiveTab(tab);
     const hash = tab === 'analysis' ? '#analysis' : tab === 'sample' ? '#sample' : '#home';
-    // Preserve Next.js's router state when changing only the fragment.
-    window.history.replaceState(window.history.state, '', hash);
+    // Next copies its own history metadata and synchronizes the canonical URL.
+    // Passing __NA back would bypass that synchronization.
+    window.history.replaceState(null, '', hash);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 

@@ -20,7 +20,9 @@ export function subscribeToMainTab(target: Window, onChange: (tab: MainTab) => v
       const original = target.history[name];
       target.history[name] = function (...args: Parameters<History[typeof name]>) {
         original.apply(this, args);
-        notify();
+        // Next writes history during an insertion effect. Notify after its
+        // commit, never schedule a React state update inside that effect.
+        queueMicrotask(notify);
       };
     }
     target.addEventListener('hashchange', notify);

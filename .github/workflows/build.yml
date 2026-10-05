@@ -7,6 +7,25 @@ on:
     branches: [main]
 
 jobs:
+  # Keep existing billing failures visible without preventing independent
+  # build/navigation diagnostics. This job is not allowed to fail silently.
+  billing-regression:
+    runs-on: ubuntu-latest
+    env:
+      AUTH_SECRET: ci-only-placeholder-secret-not-for-production
+      AMS_SERVICE_CODE: mcda-ci-smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Billing and AMS relay regression tests
+        run: node --experimental-strip-types --test tests/checkout-errors.test.mjs tests/ams-relay.test.mjs tests/fresh-checkout.test.mjs tests/fresh-checkout-http.test.mjs tests/membership-config.test.mjs tests/billing-prices.test.mjs tests/slip-price-channel.test.mjs
+
   build:
     runs-on: ubuntu-latest
     env:
@@ -24,9 +43,6 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-
-      - name: Billing and AMS relay regression tests
-        run: node --experimental-strip-types --test tests/checkout-errors.test.mjs tests/ams-relay.test.mjs tests/fresh-checkout.test.mjs tests/fresh-checkout-http.test.mjs tests/membership-config.test.mjs tests/billing-prices.test.mjs tests/slip-price-channel.test.mjs
 
       - name: Navigation lifecycle regression tests
         run: node --experimental-strip-types --test tests/navigation-lifecycle.test.mjs
@@ -54,9 +70,6 @@ jobs:
           docker logs mcda-nextjs-v2
           exit 1
 
-      - name: AMS webhook HTTP POST smoke test
-        run: node tests/ams-relay-http-smoke.mjs
-
       - name: Install navigation browser test tools
         run: |
           npm install --no-save --package-lock=false playwright@1.55.1
@@ -64,6 +77,9 @@ jobs:
 
       - name: Navigation browser regression
         run: node --experimental-strip-types tests/navigation-browser.mjs
+
+      - name: AMS webhook HTTP POST smoke test
+        run: node tests/ams-relay-http-smoke.mjs
 
       - name: Upload navigation screenshots
         if: always()
