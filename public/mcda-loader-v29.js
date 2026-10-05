@@ -3,7 +3,7 @@
   const MAX_ATTEMPTS = 3;
   const loader = document.currentScript;
   const mountId = loader && loader.dataset.mcdaMountId;
-  const root = mountId && document.querySelector(`[data-mcda-mount-id="${mountId}"]`);
+  const root = mountId && document.querySelector(`div[data-mcda-mount-id="${mountId}"]`);
   if (!loader || !root || !loader.isConnected || !root.isConnected) return;
 
   let attempt = 0;

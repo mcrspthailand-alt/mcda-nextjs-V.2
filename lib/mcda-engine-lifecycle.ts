@@ -4,7 +4,7 @@ export function withEngineLifecycle(source: string): string {
 (function (nativeWindow, nativeDocument) {
   const script = nativeDocument.currentScript;
   const mountId = script && script.dataset.mcdaMountId;
-  const root = mountId && nativeDocument.querySelector('[data-mcda-mount-id="' + mountId + '"]');
+  const root = mountId && nativeDocument.querySelector('div[data-mcda-mount-id="' + mountId + '"]');
   // A removed script can still finish downloading. Never bind it to a newer UI.
   if (!script || !script.isConnected || !root || !root.isConnected) return;
 

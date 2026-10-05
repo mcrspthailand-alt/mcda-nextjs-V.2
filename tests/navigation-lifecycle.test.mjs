@@ -40,7 +40,13 @@ function engineBrowser(id = 'mcda-1') {
   const document = new Target();
   const root = { isConnected: true, dataset: { mcdaMountId: id }, querySelector: () => null };
   const scripts = [];
-  document.querySelector = (selector) => selector === `[data-mcda-mount-id="${root.dataset.mcdaMountId}"]` ? root : null;
+  document.querySelector = (selector) => {
+    const attr = `[data-mcda-mount-id="${root.dataset.mcdaMountId}"]`;
+    if (selector === `div${attr}`) return root;
+    // Runtime scripts live in <head>, before the application's <div>.
+    if (selector === attr) return scripts.find(script => script.isConnected) ?? root;
+    return null;
+  };
   document.createElement = () => ({
     dataset: {}, isConnected: false, onload: null, onerror: null,
     remove() { this.isConnected = false; },
@@ -203,5 +209,16 @@ test('failed initialization releases side effects and never marks engine ready',
     setTimeout(() => {}, 1); throw new Error('initialization failed');`), /initialization failed/);
   assert.equal(env.document.count(), 0);
   assert.equal(env.window.timers.size, 0);
+  assert.equal(engine.dataset.mcdaInitialized, undefined);
+});
+
+test('a connected runtime script cannot stand in for a detached application root', () => {
+  const env = engineBrowser();
+  runLoader(env);
+  const engine = env.scripts[0];
+  assert.equal(engine.isConnected, true);
+  env.root.isConnected = false;
+  runEngine(env, engine);
+  assert.equal(env.window.initializations, undefined);
   assert.equal(engine.dataset.mcdaInitialized, undefined);
 });
