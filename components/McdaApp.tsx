@@ -14,6 +14,10 @@ type Entitlements = {
 
 type EngineScript = HTMLScriptElement & { mcdaDispose?: () => void };
 
+// Preserve object identity so React does not replace the engine-owned DOM
+// when the parent rerenders during tab navigation.
+const ENGINE_HTML = { __html: MCDA_MARKUP };
+
 // Each effect setup gets its own identity, including React Strict Mode replays.
 let mountSequence = 0;
 
@@ -272,5 +276,5 @@ export default function McdaApp() {
     };
   }, []);
 
-  return <div ref={rootRef} dangerouslySetInnerHTML={{ __html: MCDA_MARKUP }} />;
+  return <div ref={rootRef} dangerouslySetInnerHTML={ENGINE_HTML} />;
 }
