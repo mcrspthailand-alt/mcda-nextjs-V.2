@@ -4,30 +4,16 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import McdaApp from '@/components/McdaApp';
 import McdaHome from '@/components/McdaHome';
 import SampleGallery from '@/components/SampleGallery';
-
-type MainTab = 'home' | 'analysis' | 'sample';
-
-function tabFromHash(): MainTab {
-  if (typeof window === 'undefined') return 'home';
-  if (window.location.hash === '#analysis') return 'analysis';
-  if (window.location.hash === '#sample') return 'sample';
-  return 'home';
-}
+import { subscribeToMainTab, type MainTab } from '@/lib/main-tab-navigation';
 
 export default function MainTabs() {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [analysisMounted, setAnalysisMounted] = useState(false);
 
-  useEffect(() => {
-    const syncFromHash = () => {
-      const nextTab = tabFromHash();
-      setActiveTab(nextTab);
-      if (nextTab === 'analysis') setAnalysisMounted(true);
-    };
-    syncFromHash();
-    window.addEventListener('hashchange', syncFromHash);
-    return () => window.removeEventListener('hashchange', syncFromHash);
-  }, []);
+  useEffect(() => subscribeToMainTab(window, (nextTab) => {
+    setActiveTab(nextTab);
+    if (nextTab === 'analysis') setAnalysisMounted(true);
+  }), []);
 
   useEffect(() => {
     document.title = activeTab === 'analysis'
@@ -41,7 +27,8 @@ export default function MainTabs() {
     if (tab === 'analysis') setAnalysisMounted(true);
     setActiveTab(tab);
     const hash = tab === 'analysis' ? '#analysis' : tab === 'sample' ? '#sample' : '#home';
-    window.history.replaceState(null, '', hash);
+    // Preserve Next.js's router state when changing only the fragment.
+    window.history.replaceState(window.history.state, '', hash);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -50,38 +37,35 @@ export default function MainTabs() {
       <div style={styles.tabBarShell}>
         <div style={styles.tabBar} role="tablist" aria-label="MCDA main navigation">
           <button
+            id="main-tab-home"
             type="button"
             role="tab"
+            aria-controls="home"
             aria-selected={activeTab === 'home'}
             onClick={() => selectTab('home')}
-            style={{
-              ...styles.tabButton,
-              ...(activeTab === 'home' ? styles.activeTab : {}),
-            }}
+            style={{ ...styles.tabButton, ...(activeTab === 'home' ? styles.activeTab : {}) }}
           >
             หน้าหลัก
           </button>
           <button
+            id="main-tab-analysis"
             type="button"
             role="tab"
+            aria-controls="analysis"
             aria-selected={activeTab === 'analysis'}
             onClick={() => selectTab('analysis')}
-            style={{
-              ...styles.tabButton,
-              ...(activeTab === 'analysis' ? styles.activeTab : {}),
-            }}
+            style={{ ...styles.tabButton, ...(activeTab === 'analysis' ? styles.activeTab : {}) }}
           >
             MCDA Analysis
           </button>
           <button
+            id="main-tab-sample"
             type="button"
             role="tab"
+            aria-controls="sample"
             aria-selected={activeTab === 'sample'}
             onClick={() => selectTab('sample')}
-            style={{
-              ...styles.tabButton,
-              ...(activeTab === 'sample' ? styles.activeTab : {}),
-            }}
+            style={{ ...styles.tabButton, ...(activeTab === 'sample' ? styles.activeTab : {}) }}
           >
             Sample
           </button>
@@ -89,6 +73,7 @@ export default function MainTabs() {
       </div>
 
       <section
+        id="home"
         role="tabpanel"
         aria-label="หน้าหลัก"
         style={{ display: activeTab === 'home' ? 'block' : 'none' }}
@@ -98,6 +83,7 @@ export default function MainTabs() {
 
       {analysisMounted ? (
         <section
+          id="analysis"
           role="tabpanel"
           aria-label="MCDA Analysis"
           style={{ display: activeTab === 'analysis' ? 'block' : 'none' }}
@@ -107,6 +93,7 @@ export default function MainTabs() {
       ) : null}
 
       <section
+        id="sample"
         role="tabpanel"
         aria-label="Sample"
         style={{ display: activeTab === 'sample' ? 'block' : 'none' }}

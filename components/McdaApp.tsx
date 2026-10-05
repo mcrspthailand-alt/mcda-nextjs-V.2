@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { MCDA_MARKUP } from '@/lib/mcdaMarkup';
 
@@ -12,6 +12,11 @@ type Entitlements = {
   premiumUntil: string | null;
 };
 
+type EngineScript = HTMLScriptElement & { mcdaDispose?: () => void };
+
+// Each effect setup gets its own identity, including React Strict Mode replays.
+let mountSequence = 0;
+
 declare global {
   interface Window {
     XLSX: typeof XLSX;
@@ -21,19 +26,30 @@ declare global {
   }
 }
 
-function membershipToast(message: string) {
-  const toast = document.getElementById('toast');
-  if (!toast) return;
-  toast.textContent = message;
-  toast.classList.add('show');
-  window.setTimeout(() => toast.classList.remove('show'), 4200);
-}
-
 export default function McdaApp() {
+  const rootRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const mountId = `mcda-${++mountSequence}`;
+    root.dataset.mcdaMountId = mountId;
+    const controller = new AbortController();
+    let disposed = false;
+    let toastTimer: number | undefined;
     window.XLSX = XLSX;
 
-    const pdfButton = document.getElementById('exportPdfBtn');
+    function membershipToast(message: string) {
+      if (disposed) return;
+      const toast = root!.querySelector<HTMLElement>('#toast');
+      if (!toast) return;
+      window.clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.classList.add('show');
+      toastTimer = window.setTimeout(() => toast.classList.remove('show'), 4200);
+    }
+
+    const pdfButton = root.querySelector('#exportPdfBtn');
     if (pdfButton) pdfButton.textContent = 'บันทึกรายงาน PDF (โมเดลที่เลือก)';
 
     let engineReady = false;
@@ -43,7 +59,7 @@ export default function McdaApp() {
     const cleanupFunctions: Array<() => void> = [];
 
     const style = document.createElement('style');
-    style.dataset.mcdaMembershipStyle = 'v28';
+    style.dataset.mcdaMembershipStyle = 'v29';
     style.textContent = `
       .model-toggle.premium-locked{
         position:relative;
@@ -69,7 +85,7 @@ export default function McdaApp() {
 
     function modelButtons() {
       return Array.from(
-        document.querySelectorAll<HTMLButtonElement>('#modelButtonWrap [data-model]'),
+        root!.querySelectorAll<HTMLButtonElement>('#modelButtonWrap [data-model]'),
       );
     }
 
@@ -79,7 +95,7 @@ export default function McdaApp() {
     }
 
     function applyModelLocks() {
-      if (!engineReady || !currentEntitlements) return;
+      if (disposed || !engineReady || !currentEntitlements) return;
       const buttons = modelButtons();
 
       syncingModels = true;
@@ -100,9 +116,9 @@ export default function McdaApp() {
     }
 
     function installModelGuard() {
-      if (guardInstalled || !engineReady) return;
-      const wrap = document.getElementById('modelButtonWrap');
-      const selectAll = document.getElementById('selectAllModelsBtn');
+      if (disposed || guardInstalled || !engineReady) return;
+      const wrap = root!.querySelector('#modelButtonWrap');
+      const selectAll = root!.querySelector('#selectAllModelsBtn');
       if (!wrap) return;
 
       const onModelClick = (event: Event) => {
@@ -152,32 +168,40 @@ export default function McdaApp() {
 
     async function refreshEntitlements() {
       try {
-        const response = await fetch('/api/account/entitlements', { cache: 'no-store' });
+        const response = await fetch('/api/account/entitlements', {
+          cache: 'no-store', signal: controller.signal,
+        });
+        if (disposed) return null;
         if (response.status === 401) {
           window.location.href = '/auth/sign-in';
           return null;
         }
         const data = await response.json();
+        if (disposed) return null;
         if (!response.ok) throw new Error(data?.error?.message || 'entitlements');
         currentEntitlements = data.entitlements;
         applyModelLocks();
         return currentEntitlements;
       } catch (error) {
+        if (disposed) return null;
         console.error('Unable to load MCDA membership entitlements', error);
         membershipToast('ไม่สามารถตรวจสอบสิทธิ์สมาชิกได้ กรุณารีเฟรชหน้าเว็บ');
         return null;
       }
     }
 
-    window.MCDA_ACCESS_GUARD = {
+    const accessGuard = {
       async authorize(models: string[]) {
+        if (disposed) return { ok: false };
         try {
           const response = await fetch('/api/analysis/authorize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ models }),
+            signal: controller.signal,
           });
           const data = await response.json();
+          if (disposed) return { ok: false };
 
           if (data?.entitlements) {
             currentEntitlements = data.entitlements;
@@ -197,6 +221,7 @@ export default function McdaApp() {
 
           return { ok: true };
         } catch (error) {
+          if (disposed) return { ok: false };
           console.error('MCDA access authorization failed', error);
           return {
             ok: false,
@@ -205,14 +230,16 @@ export default function McdaApp() {
         }
       },
     };
+    window.MCDA_ACCESS_GUARD = accessGuard;
 
-    const onEngineReady = () => {
+    const onEngineReady = (event: Event) => {
+      if (disposed || (event as CustomEvent<{ mountId?: string }>).detail?.mountId !== mountId) return;
       engineReady = true;
       installModelGuard();
       applyModelLocks();
     };
     const onEntitlementRefresh = () => {
-      void refreshEntitlements();
+      if (!disposed) void refreshEntitlements();
     };
 
     window.addEventListener('mcda-engine-ready', onEngineReady);
@@ -222,31 +249,28 @@ export default function McdaApp() {
 
     void refreshEntitlements();
 
-    const existingRuntime = document.querySelector<HTMLScriptElement>(
-      'script[data-mcda-engine-runtime="v28"]',
-    );
-    if (existingRuntime) {
-      engineReady = true;
-      installModelGuard();
-      applyModelLocks();
-    }
-
-    const existing = document.querySelector<HTMLScriptElement>('script[data-mcda-engine="v28"]');
-    if (!existing) {
-      const script = document.createElement('script');
-      script.src = '/mcda-loader.js?v=28';
-      script.async = false;
-      script.dataset.mcdaEngine = 'v28';
-      document.body.appendChild(script);
-      cleanupFunctions.push(() => script.remove());
-    }
+    // The engine binds to this DOM, not to a document-wide "script exists" flag.
+    const script = document.createElement('script') as EngineScript;
+    script.src = '/mcda-loader-v29.js';
+    script.async = false;
+    script.dataset.mcdaEngine = 'v29';
+    script.dataset.mcdaMountId = mountId;
+    script.onerror = () => membershipToast('ไม่สามารถโหลด MCDA engine ได้ กรุณาลองใหม่ภายหลัง');
+    document.body.appendChild(script);
 
     return () => {
-      delete window.MCDA_ACCESS_GUARD;
+      disposed = true;
+      controller.abort();
+      window.clearTimeout(toastTimer);
+      if (window.MCDA_ACCESS_GUARD === accessGuard) delete window.MCDA_ACCESS_GUARD;
       cleanupFunctions.forEach((cleanup) => cleanup());
+      script.onerror = null;
+      script.mcdaDispose?.();
+      script.remove();
       style.remove();
+      if (root.dataset.mcdaMountId === mountId) delete root.dataset.mcdaMountId;
     };
   }, []);
 
-  return <div dangerouslySetInnerHTML={{ __html: MCDA_MARKUP }} />;
+  return <div ref={rootRef} dangerouslySetInnerHTML={{ __html: MCDA_MARKUP }} />;
 }

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { NextRequest } from 'next/server';
 import { getRequestUser } from '@/lib/request-user';
+import { withEngineLifecycle } from '@/lib/mcda-engine-lifecycle';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -102,13 +103,15 @@ export async function GET(request: NextRequest) {
   try {
     const source = await getEngineSource();
 
-    return new Response(source, {
+    // Keep already-open v28 clients working during a rolling deployment.
+    const lifecycleEnabled = request.nextUrl.searchParams.get('mcda_v') === '29';
+    return new Response(lifecycleEnabled ? withEngineLifecycle(source) : source, {
       status: 200,
       headers: {
         'Content-Type': 'application/javascript; charset=utf-8',
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
-        'X-MCDA-Engine-Version': '28',
+        'X-MCDA-Engine-Version': lifecycleEnabled ? '29' : '28',
       },
     });
   } catch (error) {
