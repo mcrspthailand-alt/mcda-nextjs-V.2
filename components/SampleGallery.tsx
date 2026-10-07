@@ -25,10 +25,16 @@ const SAMPLE_VIDEOS: SampleVideo[] = [
     titleEn: 'MCDA Analysis Sample 02',
     youtubeId: 'TcaE9SusHCA',
   },
-  ...Array.from({ length: 14 }, (_, index) => ({
-    id: index + 3,
-    titleTh: `ตัวอย่างที่ ${String(index + 3).padStart(2, '0')}`,
-    titleEn: `Sample ${String(index + 3).padStart(2, '0')}`,
+  {
+    id: 3,
+    titleTh: 'Data Structure for MCDA',
+    titleEn: 'Data Structure for MCDA',
+    youtubeId: 'cO8I79khnUg',
+  },
+  ...Array.from({ length: 13 }, (_, index) => ({
+    id: index + 4,
+    titleTh: `ตัวอย่างที่ ${String(index + 4).padStart(2, '0')}`,
+    titleEn: `Sample ${String(index + 4).padStart(2, '0')}`,
   })),
 ];
 
