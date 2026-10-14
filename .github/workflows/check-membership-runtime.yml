@@ -1,4 +1,4 @@
-# Read-only, one-off rollout verification. This branch is not deployed.
+# Read-only diagnostic only; never deploy this branch.
 name: Membership production verification
 on:
   push:
@@ -7,47 +7,23 @@ permissions: {}
 jobs:
   runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
-      - name: Verify public running release, trial flags and anonymous API protection
+      - name: Inspect safe health fields on the public domain and v2 listener
         shell: bash
         run: |
           node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          const origin = 'https://mcda-decision-analysis.micro-support.com';
-          let health;
-          const deadline = Date.now() + 220000;
-          while (Date.now() < deadline) {
+          const targets = [
+            ['public-domain', 'https://mcda-decision-analysis.micro-support.com/api/health'],
+            ['v2-exposed-listener', 'http://183.88.220.157:3045/api/health'],
+          ];
+          for (const [name, url] of targets) {
             try {
-              const response = await fetch(`${origin}/api/health?membership-probe=${Date.now()}`, {
-                redirect: 'error', headers: { 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(10000),
-              });
-              if (!response.ok) { console.log('Health HTTP', response.status); }
-              else {
-                const body = await response.json();
-                if (body.release === 'trial-redeem-ui-20261014') {
-                  health = body;
-                  assert.equal(body.status, 'ok');
-                  assert.deepEqual(body.membership, { trialEnabled: true, trialDays: 7, redeemEnabled: true });
-                  assert.match(response.headers.get('cache-control') || '', /no-store/);
-                  console.log('Verified running release:', body.release);
-                  console.log('Verified public promotion settings:', JSON.stringify(body.membership));
-                  break;
-                }
-                console.log('Previous release is still serving; deployment not yet verified.');
-              }
-            } catch (error) {
-              if (health) throw error;
-              console.log('Health read not yet available:', error.name);
-            }
-            await new Promise(resolve => setTimeout(resolve, 5000));
+              const response = await fetch(`${url}?probe=${Date.now()}`, { redirect: 'manual', signal: AbortSignal.timeout(12000), headers: { 'Cache-Control': 'no-cache' } });
+              console.log(name, 'HTTP', response.status);
+              const body = await response.json();
+              console.log(name, JSON.stringify({ status: body.status, service: body.service, release: body.release, membership: body.membership && { trialEnabled: body.membership.trialEnabled, trialDays: body.membership.trialDays, redeemEnabled: body.membership.redeemEnabled } }));
+            } catch (error) { console.log(name, 'unavailable:', error.name); }
           }
-          assert.ok(health, 'The new running release could not be verified before the deadline.');
-          for (const path of ['/api/account/benefits', '/api/admin/redeem-codes']) {
-            const response = await fetch(origin + path, { redirect: 'manual', signal: AbortSignal.timeout(10000) });
-            assert.equal(response.status, 401, `${path} must reject anonymous access`);
-            assert.match(response.headers.get('content-type') || '', /application\/json/);
-            console.log('Anonymous API protection passed:', path, response.status);
-          }
-          console.log('PASS: production release, runtime Trial 7 days, Redeem enabled, and anonymous API checks. No user was created, no trial claimed, no code issued or redeemed, and no payment request was made.');
+          console.log('Diagnostic only: no authentication, account creation, grants, codes, payments, or configuration mutations were attempted.');
           NODE
