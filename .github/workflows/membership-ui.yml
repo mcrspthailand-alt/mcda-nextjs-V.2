@@ -1,0 +1,26 @@
+name: Membership UI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AUTH_SECRET: ci-only-placeholder-secret-not-for-production
+      AMS_SERVICE_CODE: mcda-ci-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm install --no-save --package-lock=false jsdom@26.1.0
+      - name: Member and admin localization with the real language provider
+        run: node --test tests/benefits-ui.test.mjs
+      - name: Production build
+        run: npm run build
