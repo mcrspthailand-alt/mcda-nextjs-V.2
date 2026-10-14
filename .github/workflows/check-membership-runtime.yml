@@ -1,0 +1,53 @@
+# Read-only, one-off rollout verification. This branch is not deployed.
+name: Membership production verification
+on:
+  push:
+    branches: [ops/check-membership-runtime-20261014]
+permissions: {}
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify public running release, trial flags and anonymous API protection
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const origin = 'https://mcda-decision-analysis.micro-support.com';
+          let health;
+          const deadline = Date.now() + 220000;
+          while (Date.now() < deadline) {
+            try {
+              const response = await fetch(`${origin}/api/health?membership-probe=${Date.now()}`, {
+                redirect: 'error', headers: { 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(10000),
+              });
+              if (!response.ok) { console.log('Health HTTP', response.status); }
+              else {
+                const body = await response.json();
+                if (body.release === 'trial-redeem-ui-20261014') {
+                  health = body;
+                  assert.equal(body.status, 'ok');
+                  assert.deepEqual(body.membership, { trialEnabled: true, trialDays: 7, redeemEnabled: true });
+                  assert.match(response.headers.get('cache-control') || '', /no-store/);
+                  console.log('Verified running release:', body.release);
+                  console.log('Verified public promotion settings:', JSON.stringify(body.membership));
+                  break;
+                }
+                console.log('Previous release is still serving; deployment not yet verified.');
+              }
+            } catch (error) {
+              if (health) throw error;
+              console.log('Health read not yet available:', error.name);
+            }
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          }
+          assert.ok(health, 'The new running release could not be verified before the deadline.');
+          for (const path of ['/api/account/benefits', '/api/admin/redeem-codes']) {
+            const response = await fetch(origin + path, { redirect: 'manual', signal: AbortSignal.timeout(10000) });
+            assert.equal(response.status, 401, `${path} must reject anonymous access`);
+            assert.match(response.headers.get('content-type') || '', /application\/json/);
+            console.log('Anonymous API protection passed:', path, response.status);
+          }
+          console.log('PASS: production release, runtime Trial 7 days, Redeem enabled, and anonymous API checks. No user was created, no trial claimed, no code issued or redeemed, and no payment request was made.');
+          NODE
