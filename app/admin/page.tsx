@@ -16,5 +16,5 @@ export default async function AdminPage() {
     if(error instanceof AdminAccessError) return <main style={{padding:40,fontFamily:'Arial,sans-serif'}}><h1>ไม่มีสิทธิ์เข้าถึง Admin</h1><p>บัญชีนี้ไม่ได้รับสิทธิ์ผู้ดูแล หรือยังไม่ได้ยืนยันอีเมล</p><a href="/">กลับหน้าวิเคราะห์</a></main>;
     throw error;
   }
-  return <AdminDashboard admin={{name:user.name,email:user.email}} />;
+  return <><nav aria-label="จัดการสมาชิก" style={{padding:'16px 24px',background:'#edf5fa',fontFamily:'Arial,sans-serif'}}><a href="/admin/redeem-codes" style={{color:'#087e80',fontWeight:700}}>Trial และ Redeem codes →</a></nav><AdminDashboard admin={{name:user.name,email:user.email}} /></>;
 }

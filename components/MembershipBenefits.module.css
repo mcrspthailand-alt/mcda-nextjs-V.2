@@ -1,0 +1,28 @@
+.shell { max-width:1120px; margin:24px auto; padding:0 20px; font-family:Arial,sans-serif; color:#163148; }
+.panel { background:#fff; border:1px solid #d9e5ed; border-radius:18px; padding:24px; box-shadow:0 6px 22px #18354a08; }
+.heading { margin:0 0 8px; font-size:22px; line-height:1.4; }
+.kicker { margin:0 0 6px; color:#087e80; font-size:12px; font-weight:700; letter-spacing:1px; }
+.muted { color:#506578; line-height:1.65; margin:8px 0 16px; }
+.grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+.form { display:grid; gap:14px; }
+.field { display:grid; gap:6px; font-size:14px; font-weight:600; }
+.input { width:100%; box-sizing:border-box; border:1px solid #b5c8d6; border-radius:9px; padding:11px 12px; color:#163148; background:#fff; font:inherit; min-height:44px; }
+.input:focus-visible, .button:focus-visible, .secondary:focus-visible, .link:focus-visible { outline:3px solid #10a6ac; outline-offset:3px; }
+.button, .secondary { min-height:44px; padding:10px 16px; border:1px solid #087e80; border-radius:9px; font:inherit; font-weight:600; cursor:pointer; }
+.button { color:#fff; background:#087e80; }
+.secondary { color:#164757; background:#fff; border-color:#b5c8d6; }
+.button:disabled, .secondary:disabled { opacity:.5; cursor:not-allowed; }
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.badge { display:inline-block; border-radius:20px; padding:6px 11px; background:#e1f4ef; color:#17604c; font-size:13px; }
+.notice { padding:13px 16px; border-radius:10px; background:#edf5fa; color:#244e69; line-height:1.6; margin:12px 0; overflow-wrap:anywhere; }
+.error { background:#fff0ee; color:#963c31; }
+.tableWrap { overflow-x:auto; margin:18px 0; }
+.table { width:100%; border-collapse:collapse; font-size:14px; text-align:left; }
+.table th { color:#53697a; background:#f4f8fb; }
+.table th, .table td { padding:12px; border-bottom:1px solid #e1eaf0; vertical-align:top; line-height:1.55; }
+.code { display:block; font-size:18px; padding:16px; background:#f3f8fb; border:1px dashed #8fb5c9; border-radius:10px; overflow-wrap:anywhere; user-select:all; margin:12px 0; }
+.link { color:#087e80; text-decoration:underline; }
+.section { margin-top:24px; }
+.list { margin:10px 0; padding-left:20px; line-height:1.7; }
+@media(max-width:700px) { .grid { grid-template-columns:1fr; gap:22px; } .panel { padding:18px; } .shell { padding:0 12px; margin:16px auto; } .heading { font-size:20px; } }
+@media(prefers-reduced-motion:reduce) { .shell * { scroll-behavior:auto; } }
