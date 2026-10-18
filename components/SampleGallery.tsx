@@ -74,12 +74,22 @@ const SECTIONS: SampleSection[] = [
     title: 'Sample',
     subtitleTh: 'ตัวอย่างการประยุกต์ใช้ การคำนวณ และกรณีศึกษา',
     subtitleEn: 'Worked examples, applications, and case-based demonstrations.',
-    videos: Array.from({ length: 8 }, (_, index) => ({
-      id: index + 13,
-      slot: index + 1,
-      titleTh: `Sample ${String(index + 1).padStart(2, '0')}`,
-      titleEn: `Sample ${String(index + 1).padStart(2, '0')}`,
-    })),
+    videos: [
+      {
+        id: 13,
+        slot: 1,
+        titleTh: 'AHP via google form',
+        titleEn: 'AHP via google form',
+        youtubeId: 'qw44F1vpL5I',
+        startSeconds: 13,
+      },
+      ...Array.from({ length: 7 }, (_, index) => ({
+        id: index + 14,
+        slot: index + 2,
+        titleTh: `Sample ${String(index + 2).padStart(2, '0')}`,
+        titleEn: `Sample ${String(index + 2).padStart(2, '0')}`,
+      })),
+    ],
   },
 ];
 
