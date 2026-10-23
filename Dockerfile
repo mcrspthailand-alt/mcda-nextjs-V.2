@@ -1,4 +1,5 @@
-FROM node:20-alpine AS base
+# Keep the runtime aligned with .nvmrc and the October 2026 security release.
+FROM node:22.23.4-alpine AS base
 
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
@@ -12,7 +13,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

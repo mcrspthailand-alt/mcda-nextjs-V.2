@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - run: npm install
       - name: Unit, HTTP and real PostgreSQL race/rollback tests
         run: node --test tests/benefits-unit.test.mjs tests/benefits-postgres.test.mjs
