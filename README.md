@@ -139,6 +139,11 @@ See `docs/PROMPTPAY_QR_IMPLEMENTATION.md` for the fallback QR payload details.
 
 ## Local development
 
+Use Node.js **22.23.4 or a later patched 22.x release**. The repository's `.nvmrc`
+pins the version used by CI, and the Docker build and runtime share the same
+`node:22.23.4-alpine` base. If using nvm, run `nvm install` and `nvm use` before
+installing dependencies.
+
 ```bash
 npm install
 npm run dev
@@ -156,8 +161,50 @@ npm start
 ## Docker / Easypanel
 
 ```bash
-docker build -t mcda-nextjs-v2 .
+docker build --pull -t mcda-nextjs-v2 .
 docker run --rm -p 3000:3000 --env-file .env mcda-nextjs-v2
 ```
 
 The existing `/api/health` endpoint can be used as the container health check.
+
+### October 2026 Node.js security update
+
+Node.js 20 reached end of life on 30 April 2026. This project now uses
+**22.23.4**, one of the patched releases in the
+[21 October 2026 Node.js security announcement](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases).
+The existing CI already used Node.js 22; pinning its patched version also removes
+the previous mismatch with the Node.js 20 production container. See the
+[official support schedule](https://github.com/nodejs/Release#release-schedule)
+when planning the next major upgrade (Node.js 22 support ends 30 April 2027).
+
+After merging this update, rebuild the **MCDA app service** from the updated
+Dockerfile and deploy the new image in Easypanel. For a manual clean build use
+`docker build --pull --no-cache -t mcda-nextjs-v2 .`. Recreate the running app
+container from that image, retaining its existing environment and port mapping.
+A restart of the old container, an npm dependency update, or a Node.js update on
+the Docker host does not replace the Node.js binary inside the app container.
+
+Verify `node --version` in the **running app container's console** (expected
+`v22.23.4` for this image). From the Docker host use
+`docker exec <mcda-container-name-or-id> node --version`. Then confirm
+`/api/health` returns HTTP 200 and smoke-test sign-in, analysis, trial/redeem and
+the payment flow using test accounts/providers. The health endpoint alone does
+not report or prove the Node.js version. No database migration is needed for
+this runtime update.
+
+For future Node.js 22 patches, update `.nvmrc`, the Docker base tag and the
+`package.json` minimum together, then rebuild and verify the deployed container.
+CI checks the actual container version against `.nvmrc` in addition to the
+existing build, browser, billing and membership tests.
+
+### Framework security patches
+
+The same update pins Next.js to **15.5.28** and keeps React / React DOM together
+at **19.1.8**, within their existing minor release lines. The former Next.js
+15.5.2 dependency is affected by the
+[React Server Components security advisory](https://nextjs.org/blog/CVE-2025-66478);
+upgrading Node.js alone does not fix that framework vulnerability. Next.js
+15.5.28 is the patched 15.5 release in the
+[14 October 2026 security update](https://nextjs.org/blog/nextjs-security-update-october-14-2026).
+Continue maintaining Node.js and npm dependencies independently as new security
+releases become available.

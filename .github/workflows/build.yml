@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Install dependencies
         run: npm install
       - name: Billing and AMS relay regression tests
@@ -39,7 +39,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
 
       - name: Install dependencies
         run: npm install
@@ -51,10 +51,17 @@ jobs:
         run: npm run build
 
       - name: Build Docker image
-        run: docker build -t mcda-nextjs-v2:test .
+        run: docker build --pull -t mcda-nextjs-v2:test .
 
       - name: Run Docker container
         run: docker run -d --name mcda-nextjs-v2 -p 3000:3000 -e AUTH_SECRET -e AMS_SERVICE_CODE mcda-nextjs-v2:test
+
+      - name: Verify the running container's Node.js version
+        run: |
+          expected="$(cat .nvmrc)"
+          actual="$(docker exec mcda-nextjs-v2 node -p 'process.versions.node')"
+          echo "Expected Node.js ${expected}; container is running ${actual}"
+          test "$actual" = "$expected"
 
       - name: Smoke test Docker container
         run: |

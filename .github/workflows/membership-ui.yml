@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - run: npm install
       - run: npm install --no-save --package-lock=false jsdom@26.1.0
       - name: Member and admin localization with the real language provider
