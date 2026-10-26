@@ -6,6 +6,7 @@ import { ensureMembershipSchema } from '@/lib/membership-schema';
 import { createHostedCheckoutWithAms, getAmsService } from '@/lib/ams-gateway';
 import { classifyHostedCheckout } from '@/lib/hosted-checkout-result';
 import { amsRelayUrl } from '@/lib/ams-relay';
+import { checkoutGatewayErrorMessage, safeValidationFields } from '@/lib/billing-response';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -132,9 +133,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       description, idempotencyKey, paymentMethodTypes, successUrl, cancelUrl, webhookUrl,
     });
     if (!gateway.ok || gateway.body.error) {
+      const code = gateway.body.error?.code || 'AMS_CHECKOUT_REQUEST_FAILED';
+      const validationFields = safeValidationFields(gateway.body.error?.validationFields);
       return json({ error: {
-        code: gateway.body.error?.code || 'AMS_CHECKOUT_REQUEST_FAILED',
-        message: 'AMS ไม่สามารถเปิด Checkout ได้ กรุณาตรวจสอบรายการเดิมก่อนลองใหม่',
+        code,
+        message: checkoutGatewayErrorMessage(code, validationFields),
+        upstreamStatus: gateway.status,
+        ...(validationFields.length ? { validationFields } : {}),
         requestId: gateway.requestId, retryable: false,
       }, externalReference: order.external_reference },
       gateway.status >= 400 && gateway.status < 600 && ![401, 403].includes(gateway.status) ? gateway.status : 502,

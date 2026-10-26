@@ -207,6 +207,7 @@ function checkoutHarness(value) {
     },
     '@/lib/hosted-checkout-result': load('../lib/hosted-checkout-result.ts'),
     '@/lib/ams-relay': { amsRelayUrl: () => 'https://mcda.example.test/api/webhooks/ams?fixture=test' },
+    '@/lib/billing-response': load('../lib/billing-response.ts'),
   });
   return { calls, invoke: () => route.POST({}, { params: Promise.resolve({ id: value.id }) }) };
 }

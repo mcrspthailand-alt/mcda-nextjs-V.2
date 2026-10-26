@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import crypto from 'node:crypto';
 import ts from 'typescript';
-import { BillingResponseError, readBillingJson, billingErrorMessage } from '../lib/billing-response.ts';
+import { BillingResponseError, readBillingJson, billingErrorMessage, checkoutGatewayErrorMessage, safeValidationFields } from '../lib/billing-response.ts';
 import * as checkoutRules from '../lib/hosted-checkout-result.ts';
 
 const reference = 'MCDAUNITTEST01';
@@ -122,11 +122,13 @@ function routeHarness(gatewayData = pending, options = {}) {
         body: { data: { service_code: 'mcda-test', providers: { stripe: true } } } }),
       createHostedCheckoutWithAms: async input => {
         calls.push(input);
+        if (options.gatewayResult) return options.gatewayResult;
         return { ok: true, status: 200, requestId: 'unit-request-01', body: { data: gatewayData } };
       },
     },
     '@/lib/hosted-checkout-result': checkoutRules,
     '@/lib/ams-relay': relay,
+    '@/lib/billing-response': { checkoutGatewayErrorMessage, safeValidationFields },
   });
   return { calls, updates, invoke: () => route.POST({}, { params: Promise.resolve({ id: 'unit-order-id' }) }) };
 }
@@ -153,6 +155,52 @@ test('real route accepts usable checkout with null PaymentIntent and retains cal
   assert.ok(!h.updates[0].sql.includes("status = 'paid'"));
   assert.equal(h.calls[0].successUrl, `https://mcda.example.test/billing?checkout=success&order_id=${reference}`);
   assert.equal(h.calls[0].webhookUrl, relay.amsRelayUrl('https://mcda.example.test', reference));
+});
+test('checkout validation failure reaches the billing message with safe fields and HTTP status', async () => {
+  const h = routeHarness(pending, { gatewayResult: {
+    ok: false, status: 422, requestId: 'validation-request',
+    body: { error: { code: 'AMS_VALIDATION_FAILED', message: 'private upstream diagnostics',
+      validationFields: ['payment_method_types', 'webhook_url', 'unknown_secret_field', 'payment_method_types'] } },
+  } });
+  const response = await h.invoke();
+  const body = await response.json();
+  assert.equal(response.status, 422);
+  assert.equal(response.headers.get('x-request-id'), 'validation-request');
+  assert.equal(body.externalReference, reference);
+  assert.equal(body.error.retryable, false);
+  assert.equal(body.error.upstreamStatus, 422);
+  assert.deepEqual(body.error.validationFields, ['payment_method_types', 'webhook_url']);
+  const message = billingErrorMessage(body, 'fallback');
+  assert.match(message, /AMS_VALIDATION_FAILED/);
+  assert.match(message, /payment_method_types, webhook_url/);
+  assert.match(message, /AMS HTTP 422/);
+  assert.match(message, /validation-request/);
+  assert.doesNotMatch(JSON.stringify(body), /private upstream|unknown_secret_field/);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.updates.length, 0);
+  assert.equal(body.checkoutUrl, undefined);
+});
+test('gateway authentication failure retains upstream status without expiring the MCDA session', async () => {
+  const h = routeHarness(pending, { gatewayResult: {
+    ok: false, status: 401, requestId: 'gateway-auth-request',
+    body: { error: { code: 'AMS_GATEWAY_AUTH_FAILED', message: 'private authentication detail' } },
+  } });
+  const response = await h.invoke();
+  assert.equal(response.status, 502);
+  const body = await readBillingJson(response);
+  assert.equal(body.error.upstreamStatus, 401);
+  assert.match(billingErrorMessage(body, 'fallback'), /AMS HTTP 401/);
+  assert.doesNotMatch(JSON.stringify(body), /private authentication detail/);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.updates.length, 0);
+});
+test('billing diagnostics omit malformed HTTP status and unrecognized field names', () => {
+  assert.deepEqual(safeValidationFields(['amount', 'amount', '__proto__', 'token', {}, null]), ['amount']);
+  for (const upstreamStatus of ['422', 422.5, NaN, 99, 600, '<script>']) {
+    assert.equal(billingErrorMessage({ error: { message: 'safe', upstreamStatus } }, 'fallback'), 'safe');
+  }
+  assert.equal(checkoutGatewayErrorMessage('__proto__', []),
+    'AMS ไม่สามารถเปิด Checkout ได้ กรุณาตรวจสอบรายการเดิมก่อนลองใหม่');
 });
 test('retries retain exactly the existing deterministic key and payload', async () => {
   const h = routeHarness({ ...pending, status: 'failed', checkout_url: null });

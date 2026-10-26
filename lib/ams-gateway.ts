@@ -28,7 +28,43 @@ function gatewayTimeoutMs() {
   return value;
 }
 
-type GatewayError = { error: { code: string; message: string } };
+type GatewayError = { error: { code: string; message: string; validationFields?: string[] } };
+
+const checkoutValidationFields = [
+  'amount', 'currency', 'payment_method_types', 'external_reference', 'description',
+  'success_url', 'cancel_url', 'webhook_url',
+] as const;
+
+function safeValidationFields(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const fields = new Set(value.filter((field): field is string => typeof field === 'string')
+    .map((field) => /^payment_method_types\.\d+$/.test(field) ? 'payment_method_types' : field));
+  return checkoutValidationFields.filter((field) => fields.has(field));
+}
+
+function normalizeGatewayError(status: number, body: Record<string, unknown>): GatewayError | null {
+  const error = body.error;
+  if (error && typeof error === 'object' && !Array.isArray(error)) {
+    const code = (error as Record<string, unknown>).code;
+    // Preserve the documented AMS error contract. Framework errors may use a
+    // different shape, such as Laravel's { message, errors } validation body.
+    if (typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(code)) return null;
+  }
+  if (status === 422 && body.errors && typeof body.errors === 'object' && !Array.isArray(body.errors)) {
+    return { error: {
+      code: 'AMS_VALIDATION_FAILED',
+      message: 'AMS rejected the payment request fields',
+      validationFields: safeValidationFields(Object.keys(body.errors)),
+    } };
+  }
+  const code = status === 401 ? 'AMS_GATEWAY_AUTH_FAILED'
+    : status === 403 ? 'AMS_GATEWAY_ACCESS_DENIED'
+      : status === 429 ? 'AMS_GATEWAY_RATE_LIMITED'
+        : status >= 500 && status < 600 ? 'AMS_GATEWAY_UNAVAILABLE'
+          : 'AMS_GATEWAY_REQUEST_FAILED';
+  // Never forward framework messages, submitted values, traces or SQL details.
+  return { error: { code, message: 'AMS could not complete the payment request' } };
+}
 
 async function gatewayJson<T extends object>(response: Response): Promise<T | GatewayError> {
   const mediaType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
@@ -38,6 +74,10 @@ async function gatewayJson<T extends object>(response: Response): Promise<T | Ga
   try {
     const body: unknown = await response.json();
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('shape');
+    if (!response.ok) {
+      const normalized = normalizeGatewayError(response.status, body as Record<string, unknown>);
+      if (normalized) return normalized;
+    }
     return body as T;
   } catch (error) {
     if (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name)) throw error;
@@ -80,7 +120,7 @@ export type AmsSlipVerificationResponse = {
       message?: string;
     };
   };
-  error?: { code?: string; message?: string; provider_response?: unknown };
+  error?: { code?: string; message?: string; provider_response?: unknown; validationFields?: string[] };
   meta?: { request_id?: string };
 };
 
@@ -118,7 +158,7 @@ export type AmsServiceResponse = {
     enabled_providers?: string[];
     providers?: { stripe?: boolean; easyslip?: boolean };
   };
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; validationFields?: string[] };
 };
 
 export type AmsHostedCheckoutResponse = {
@@ -133,7 +173,7 @@ export type AmsHostedCheckoutResponse = {
     amount?: string | number;
     currency?: string;
   };
-  error?: { code?: string; message?: string; provider_response?: unknown };
+  error?: { code?: string; message?: string; provider_response?: unknown; validationFields?: string[] };
   meta?: { request_id?: string };
 };
 
@@ -187,6 +227,7 @@ export async function createHostedCheckoutWithAms(input: {
     requestId, idempotencyKey: input.idempotencyKey, httpStatus: response.status,
     contentType: response.headers.get('content-type'), ok: response.ok && !body.error,
     code: body.error?.code, paymentId: body.data?.payment_id,
+    validationFields: safeValidationFields(body.error?.validationFields),
     checkoutSessionId: body.data?.checkout_session_id, status: body.data?.status,
     hasCheckoutUrl: typeof body.data?.checkout_url === 'string' && Boolean(body.data.checkout_url),
   });
