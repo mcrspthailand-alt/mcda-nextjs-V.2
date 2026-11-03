@@ -80,10 +80,10 @@ export default function AuthUserMenu() {
         alignItems: 'center',
         gap: 10,
         padding: '8px 10px',
-        border: '1px solid rgba(148,163,184,.35)',
+        border: '1px solid rgba(118,163,232,.34)',
         borderRadius: 12,
-        background: 'rgba(255,255,255,.96)',
-        boxShadow: '0 8px 24px rgba(15,23,42,.10)',
+        background: 'rgba(248,251,255,.96)',
+        boxShadow: '0 10px 28px rgba(8,32,74,.16)',
         backdropFilter: 'blur(10px)',
         fontFamily: 'Arial,"Noto Sans Thai",sans-serif',
         fontSize: 12,
@@ -99,8 +99,8 @@ export default function AuthUserMenu() {
                 padding: '2px 6px',
                 fontSize: 9,
                 fontWeight: 900,
-                background: premium ? '#efe7ff' : '#eef4ff',
-                color: premium ? '#6941c6' : '#2257a6',
+                background: premium ? '#eeeaff' : '#eaf4ff',
+                color: premium ? '#5547d9' : '#2563eb',
               }}
             >
               {premium ? 'PREMIUM' : 'FREE'}
@@ -111,24 +111,24 @@ export default function AuthUserMenu() {
           {user.email}
         </span>
         {entitlements ? (
-          <span style={{ color: premium ? '#18794e' : '#64748b', display: 'block', marginTop: 2 }}>
+          <span style={{ color: premium ? '#0f9f6e' : '#64748b', display: 'block', marginTop: 2 }}>
             {premium
               ? `ไม่จำกัด · ถึง ${premiumEnd(entitlements.premiumUntil)}`
               : `วันนี้ ${entitlements.usedToday}/10 · เหลือ ${entitlements.remainingToday ?? 0}`}
           </span>
         ) : null}
       </div>
-      {user.isAdmin ? <a href="/admin" style={{ border:'1px solid #cbd5e1',borderRadius:8,padding:'6px 9px',color:'#1e40af',textDecoration:'none',fontWeight:800 }}>Admin</a> : null}
+      {user.isAdmin ? <a href="/admin" style={{ border:'1px solid #bfd1ec',borderRadius:8,padding:'6px 9px',color:'#2563eb',textDecoration:'none',fontWeight:800 }}>Admin</a> : null}
       <button
         type="button"
         onClick={() => {
           window.location.href = '/billing';
         }}
         style={{
-          border: '1px solid #c8b7e8',
+          border: '1px solid #bfc7f5',
           borderRadius: 8,
-          background: premium ? '#f7f2ff' : '#6941c6',
-          color: premium ? '#6941c6' : '#fff',
+          background: premium ? '#f2f0ff' : 'linear-gradient(135deg,#0ea5e9,#4f46e5)',
+          color: premium ? '#5547d9' : '#fff',
           padding: '6px 9px',
           cursor: 'pointer',
           fontSize: 12,
