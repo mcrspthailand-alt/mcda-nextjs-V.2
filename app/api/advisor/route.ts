@@ -90,17 +90,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!process.env.AI_GATEWAY_API_KEY) {
-    return NextResponse.json(
-      {
-        error: 'AI_NOT_CONFIGURED',
-        message:
-          'MCDA Advisor is installed but AI_GATEWAY_API_KEY has not been configured on the server.',
-      },
-      { status: 503 },
-    );
-  }
-
   let body: z.infer<typeof requestSchema>;
   try {
     body = requestSchema.parse(await request.json());
@@ -148,7 +137,51 @@ The output will be validated strictly. Do not add prose outside the structured o
 `;
 
   try {
-    const result = await generateText({
+    let structure: AdvisorStructure;
+    let sources: Array<{ id: string; url: string; title: string }> = [];
+    let modelName = process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna';
+    const serviceUrl = process.env.MCDA_ADVISOR_SERVICE_URL?.replace(/\/+$/, '');
+    const serviceSecret = process.env.MCDA_ADVISOR_SERVICE_SECRET;
+
+    if (serviceUrl && serviceSecret) {
+      const response = await fetch(`${serviceUrl}/api/structure`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-mcda-advisor-secret': serviceSecret,
+        },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        signal: AbortSignal.timeout(90_000),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        throw new Error(`Remote advisor service failed (${response.status}): ${detail.slice(0, 300)}`);
+      }
+
+      const payload = (await response.json()) as {
+        structure?: unknown;
+        sources?: Array<{ id: string; url: string; title: string }>;
+      };
+      structure = decisionStructureSchema.parse(payload.structure) as AdvisorStructure;
+      sources = Array.isArray(payload.sources) ? payload.sources : [];
+      modelName = 'vercel-ai-gateway-oidc';
+    } else {
+      if (!process.env.AI_GATEWAY_API_KEY) {
+        return NextResponse.json(
+          {
+            error: 'AI_NOT_CONFIGURED',
+            message:
+              body.language === 'en'
+                ? 'MCDA Advisor AI service is not configured.'
+                : 'ระบบ AI ของ MCDA Advisor ยังไม่ได้ตั้งค่า',
+          },
+          { status: 503 },
+        );
+      }
+
+      const result = await generateText({
       model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.5',
       reasoning: 'low',
       maxOutputTokens: 6000,
@@ -166,12 +199,13 @@ The output will be validated strictly. Do not add prose outside the structured o
       prompt,
     });
 
-    const structure = result.output as AdvisorStructure;
-    const sources = (result.sources ?? []).flatMap((source) =>
-      source.sourceType === 'url'
-        ? [{ id: source.id, url: source.url, title: source.title ?? source.url }]
-        : [],
-    );
+      structure = result.output as AdvisorStructure;
+      sources = (result.sources ?? []).flatMap((source) =>
+        source.sourceType === 'url'
+          ? [{ id: source.id, url: source.url, title: source.title ?? source.url }]
+          : [],
+      );
+    }
 
     if (structure.criteria.some((criterion) => criterion.values.length !== structure.alternatives.length)) {
       throw new Error('Generated criterion values do not align with alternatives.');
@@ -189,7 +223,7 @@ The output will be validated strictly. Do not add prose outside the structured o
         methodExplanations: explain ? METHOD_EXPLANATIONS : null,
         sources,
         meta: {
-          model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.5',
+          model: modelName,
           entropyMethod: 'Entropy Weight Method (EWM)',
           advisors: ['TOPSIS', 'VIKOR', 'WASPAS', 'MOORA', 'PROMETHEE'],
           calculationMode: 'deterministic-server',
