@@ -1,6 +1,6 @@
 export type AdvisorLanguage = 'th' | 'en';
 export type CriterionDirection = 'benefit' | 'cost';
-export type CriterionBasis = 'user_data' | 'model_estimate';
+export type CriterionBasis = 'user_data' | 'web_data' | 'model_estimate';
 
 export type AdvisorAlternative = {
   id: string;
