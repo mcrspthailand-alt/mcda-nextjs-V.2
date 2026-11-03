@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import AnalyticsTracker from '@/components/AnalyticsTracker';
 import LanguageProvider from '@/components/LanguageProvider';
+import DecisionAdvisorBot from '@/components/DecisionAdvisorBot';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="th" suppressHydrationWarning>
-      <body><LanguageProvider>{children}<AnalyticsTracker /></LanguageProvider></body>
+      <body><LanguageProvider>{children}<AnalyticsTracker /><DecisionAdvisorBot /></LanguageProvider></body>
     </html>
   );
 }
