@@ -100,27 +100,27 @@ export default function McdaHome({ onOpenAnalysis }: { onOpenAnalysis: () => voi
       <section style={styles.hero}>
         <div style={styles.heroGlowA} />
         <div style={styles.heroGlowB} />
-        <div style={styles.heroContent}>
-          <div style={styles.eyebrow}>THE BRIEF HISTORY OF MCDA</div>
-          <h1 style={styles.heroTitle}>จาก “การชั่งใจ” ของมนุษย์<br />สู่ศาสตร์การตัดสินใจหลายเกณฑ์</h1>
-          <p style={styles.heroLead}>
-            Multi-Criteria Decision Analysis (MCDA) หรือ Multi-Criteria Decision Making (MCDM)
-            คือกรอบคิดสำหรับปัญหาที่ไม่มีคำตอบดีที่สุดเพียงมิติเดียว แต่ต้องพิจารณาหลายเกณฑ์ หลายความเห็น
-            และหลายข้อจำกัดพร้อมกัน หน้านี้สรุปพัฒนาการสำคัญจากเอกสารอ้างอิง 3 ชุดที่แนบมา
-            ตั้งแต่รากฐานด้านเศรษฐศาสตร์และ Operations Research ไปจนถึง fuzzy decision,
-            outranking, hybrid methods และระบบสนับสนุนการตัดสินใจสมัยใหม่
-          </p>
-          <div style={styles.heroActions}>
-            <button type="button" onClick={onOpenAnalysis} style={styles.primaryButton}>
-              เปิด MCDA Analysis →
-            </button>
-            <a href="#history" style={styles.secondaryButton}>ดูเส้นเวลาประวัติศาสตร์</a>
+        <div style={styles.heroGrid}>
+          <div style={styles.heroContent}>
+            <div style={styles.eyebrow}>A MULTI-CRITERIA DECISION PLATFORM</div>
+            <h1 style={styles.heroTitle}>MCDA for<br /><span style={styles.heroAccent}>Complex Decisions</span></h1>
+            <p style={styles.heroLead}>
+              ประเมิน จัดลำดับ และเปรียบเทียบทางเลือกด้วยหลายเกณฑ์ หลายโมเดล และการวิเคราะห์ความไว
+              เพื่อสนับสนุนการตัดสินใจที่ตรวจสอบเหตุผลได้อย่างเป็นระบบ
+            </p>
+            <div style={styles.heroActions}>
+              <button type="button" onClick={onOpenAnalysis} style={styles.primaryButton}>
+                เปิด MCDA Analysis →
+              </button>
+              <a href="#history" style={styles.secondaryButton}>ดูแนวคิดและวิธีการ</a>
+            </div>
+            <div style={styles.heroFeatureRow}>
+              <span style={styles.heroFeatureChip}>13 MCDA Models</span>
+              <span style={styles.heroFeatureChip}>Ranking &amp; Sensitivity</span>
+              <span style={styles.heroFeatureChip}>Export CSV / PDF</span>
+            </div>
           </div>
-          <div style={styles.heroStats}>
-            <Stat value="หลายศตวรรษ" label="จาก intuitive trade-off สู่ formal decision science" />
-            <Stat value="56 methods" label="ถูกจัดหมวดในกรอบคัดเลือกของ Watróbski et al." />
-            <Stat value="MADM + MODM" label="สองสายหลักของการตัดสินใจหลายเกณฑ์" />
-          </div>
+          <DecisionNetworkHero />
         </div>
       </section>
 
@@ -364,6 +364,139 @@ export default function McdaHome({ onOpenAnalysis }: { onOpenAnalysis: () => voi
   );
 }
 
+function DecisionNetworkHero() {
+  const inputNodes = [
+    { x: 94, y: 118, label: 'C₁' },
+    { x: 94, y: 196, label: 'C₂' },
+    { x: 94, y: 274, label: 'C₃' },
+    { x: 94, y: 352, label: 'C₄' },
+  ];
+  const layerOne = [
+    { x: 270, y: 92 }, { x: 270, y: 160 }, { x: 270, y: 228 },
+    { x: 270, y: 296 }, { x: 270, y: 364 },
+  ];
+  const layerTwo = [
+    { x: 438, y: 122 }, { x: 438, y: 202 }, { x: 438, y: 282 }, { x: 438, y: 362 },
+  ];
+  const outputs = [
+    { x: 610, y: 160, label: 'A₁' },
+    { x: 610, y: 240, label: 'A₂' },
+    { x: 610, y: 320, label: 'A₃' },
+  ];
+
+  return (
+    <div style={styles.networkShell}>
+      <div style={styles.networkTopLabel}>Decision Structure</div>
+      <div style={styles.methodFloat}>
+        <span style={styles.methodPill}>AHP</span><span style={styles.methodPill}>TOPSIS</span><span style={styles.methodPill}>PROMETHEE</span><span style={styles.methodPill}>VIKOR</span>
+      </div>
+      <svg viewBox="0 0 700 440" role="img" aria-label="Modern three-dimensional MCDA decision network" style={styles.networkSvg}>
+        <defs>
+          <linearGradient id="networkPanel" x1="0" x2="1">
+            <stop offset="0" stopColor="#09213f" stopOpacity=".94" />
+            <stop offset=".52" stopColor="#18245d" stopOpacity=".9" />
+            <stop offset="1" stopColor="#341b5d" stopOpacity=".9" />
+          </linearGradient>
+          <radialGradient id="nodeCyan" cx=".32" cy=".28" r=".78">
+            <stop offset="0" stopColor="#d9ffff" />
+            <stop offset=".2" stopColor="#5cf5ef" />
+            <stop offset=".66" stopColor="#07b9d2" />
+            <stop offset="1" stopColor="#08708f" />
+          </radialGradient>
+          <radialGradient id="nodeBlue" cx=".32" cy=".25" r=".82">
+            <stop offset="0" stopColor="#f0eaff" />
+            <stop offset=".18" stopColor="#b9a7ff" />
+            <stop offset=".57" stopColor="#6d62f5" />
+            <stop offset="1" stopColor="#33308e" />
+          </radialGradient>
+          <radialGradient id="nodeOrange" cx=".3" cy=".25" r=".82">
+            <stop offset="0" stopColor="#fff3d3" />
+            <stop offset=".2" stopColor="#ffbd66" />
+            <stop offset=".62" stopColor="#ff713f" />
+            <stop offset="1" stopColor="#bd2f31" />
+          </radialGradient>
+          <linearGradient id="linkGradient" x1="0" x2="1">
+            <stop offset="0" stopColor="#3be7ed" stopOpacity=".76" />
+            <stop offset=".55" stopColor="#7b75ff" stopOpacity=".64" />
+            <stop offset="1" stopColor="#ff7b67" stopOpacity=".72" />
+          </linearGradient>
+          <filter id="networkGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="10" stdDeviation="10" floodColor="#020617" floodOpacity=".45" />
+          </filter>
+        </defs>
+
+        <rect x="12" y="18" width="676" height="404" rx="38" fill="url(#networkPanel)" stroke="#356d9a" strokeOpacity=".52" />
+        <path d="M40 382 C180 320 272 428 410 360 C510 310 600 350 668 305" fill="none" stroke="#29d8f0" strokeOpacity=".18" strokeWidth="2" />
+        <path d="M28 396 C172 338 272 440 420 380 C530 334 612 374 676 330" fill="none" stroke="#9966ff" strokeOpacity=".2" strokeWidth="2" />
+
+        <text x="78" y="62" fill="#5fe7ee" fontSize="13" fontWeight="800">INPUT CRITERIA</text>
+        <text x="314" y="62" fill="#b6a9ff" fontSize="13" fontWeight="800">DECISION LAYERS</text>
+        <text x="574" y="62" fill="#ffb267" fontSize="13" fontWeight="800">RANKED OUTPUT</text>
+
+        {inputNodes.flatMap((a, ai) =>
+          layerOne.map((b, bi) => (
+            <line key={`i-${ai}-${bi}`} x1={a.x + 21} y1={a.y} x2={b.x - 21} y2={b.y} stroke="url(#linkGradient)" strokeWidth="1.35" strokeOpacity=".56" />
+          ))
+        )}
+        {layerOne.flatMap((a, ai) =>
+          layerTwo.map((b, bi) => (
+            <line key={`h-${ai}-${bi}`} x1={a.x + 21} y1={a.y} x2={b.x - 21} y2={b.y} stroke="url(#linkGradient)" strokeWidth="1.25" strokeOpacity=".48" />
+          ))
+        )}
+        {layerTwo.flatMap((a, ai) =>
+          outputs.map((b, bi) => (
+            <line key={`o-${ai}-${bi}`} x1={a.x + 21} y1={a.y} x2={b.x - 24} y2={b.y} stroke="url(#linkGradient)" strokeWidth="1.5" strokeOpacity=".58" />
+          ))
+        )}
+
+        {inputNodes.map((node) => (
+          <g key={node.label} filter="url(#softShadow)">
+            <circle cx={node.x} cy={node.y} r="25" fill="url(#nodeCyan)" stroke="#79ffff" strokeWidth="1.5" />
+            <text x={node.x} y={node.y + 6} textAnchor="middle" fill="#042235" fontSize="18" fontWeight="900">{node.label}</text>
+          </g>
+        ))}
+
+        {layerOne.map((node, index) => (
+          <g key={`l1-${index}`} filter="url(#networkGlow)">
+            <circle cx={node.x} cy={node.y} r="23" fill="url(#nodeBlue)" stroke="#b3a7ff" strokeWidth="1.2" />
+            <circle cx={node.x - 7} cy={node.y - 8} r="5" fill="#fff" fillOpacity=".38" />
+          </g>
+        ))}
+
+        {layerTwo.map((node, index) => (
+          <g key={`l2-${index}`} filter="url(#networkGlow)">
+            <circle cx={node.x} cy={node.y} r="25" fill="url(#nodeBlue)" stroke="#d0b6ff" strokeWidth="1.3" />
+            <circle cx={node.x - 8} cy={node.y - 9} r="5" fill="#fff" fillOpacity=".4" />
+          </g>
+        ))}
+
+        {outputs.map((node) => (
+          <g key={node.label} filter="url(#networkGlow)">
+            <circle cx={node.x} cy={node.y} r="28" fill="url(#nodeOrange)" stroke="#ffd09a" strokeWidth="1.5" />
+            <text x={node.x} y={node.y + 6} textAnchor="middle" fill="#fff" fontSize="18" fontWeight="900">{node.label}</text>
+          </g>
+        ))}
+
+        <g transform="translate(528 376)">
+          <rect x="0" y="0" width="116" height="28" rx="14" fill="#10213c" stroke="#fb9e54" strokeOpacity=".68" />
+          <text x="58" y="18" textAnchor="middle" fill="#ffd8b5" fontSize="11" fontWeight="800">Best alternative</text>
+        </g>
+      </svg>
+      <div style={styles.networkLegend}>
+        <span><b style={{ color: '#4de5e9' }}>Data</b> &amp; Criteria</span>
+        <span>→</span>
+        <span><b style={{ color: '#a99cff' }}>MCDA</b> Evaluation</span>
+        <span>→</span>
+        <span><b style={{ color: '#ff9b54' }}>Ranking</b> &amp; Interpretation</span>
+      </div>
+    </div>
+  );
+}
+
 function SectionHeader({ kicker, title, text }: { kicker: string; title: string; text: string }) {
   return (
     <header style={styles.sectionHeader}>
@@ -566,38 +699,48 @@ const styles: Record<string, CSSProperties> = {
   },
   hero: {
     position: 'relative',
-    maxWidth: 1240,
+    maxWidth: 1360,
     margin: '0 auto',
-    padding: '78px 28px 68px',
+    padding: '66px 28px 54px',
     overflow: 'hidden',
   },
   heroGlowA: {
     position: 'absolute',
-    width: 520,
-    height: 520,
+    width: 680,
+    height: 680,
     borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(49,90,149,.16), rgba(49,90,149,0) 70%)',
-    top: -210,
-    right: -80,
+    background: 'radial-gradient(circle, rgba(49,154,255,.18), rgba(49,90,149,0) 68%)',
+    top: -280,
+    right: -120,
     pointerEvents: 'none',
   },
   heroGlowB: {
     position: 'absolute',
-    width: 430,
-    height: 430,
+    width: 520,
+    height: 520,
     borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(105,65,198,.12), rgba(105,65,198,0) 70%)',
-    bottom: -220,
-    left: -120,
+    background: 'radial-gradient(circle, rgba(125,76,255,.14), rgba(105,65,198,0) 70%)',
+    bottom: -260,
+    left: -160,
     pointerEvents: 'none',
   },
-  heroContent: { position: 'relative', zIndex: 1, maxWidth: 980 },
-  eyebrow: { fontSize: 12, fontWeight: 900, letterSpacing: '.18em', color: '#315a95', marginBottom: 16 },
-  heroTitle: { margin: 0, fontSize: 'clamp(40px,6vw,76px)', lineHeight: 1.05, letterSpacing: '-.045em', maxWidth: 980 },
-  heroLead: { margin: '24px 0 0', maxWidth: 880, fontSize: 18, lineHeight: 1.85, color: '#526074' },
-  heroActions: { display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 30 },
-  primaryButton: { border: 0, borderRadius: 12, background: '#183b70', color: '#fff', padding: '13px 19px', fontWeight: 900, fontSize: 14, cursor: 'pointer', boxShadow: '0 12px 28px rgba(24,59,112,.20)' },
-  secondaryButton: { border: '1px solid #cdd7e5', borderRadius: 12, background: '#fff', color: '#315a95', padding: '12px 18px', fontWeight: 850, fontSize: 14, textDecoration: 'none' },
+  heroGrid: { position: 'relative', zIndex: 1, display: 'grid', gridTemplateColumns: 'minmax(300px,.82fr) minmax(520px,1.18fr)', gap: 34, alignItems: 'center' },
+  heroContent: { position: 'relative', zIndex: 1, maxWidth: 560 },
+  eyebrow: { fontSize: 11, fontWeight: 950, letterSpacing: '.18em', color: '#3b82f6', marginBottom: 16 },
+  heroTitle: { margin: 0, fontSize: 'clamp(48px,5.7vw,78px)', lineHeight: .98, letterSpacing: '-.055em', maxWidth: 620, color: '#102342' },
+  heroAccent: { background: 'linear-gradient(90deg,#0ea5e9,#4f7df6,#8b5cf6)', WebkitBackgroundClip: 'text', color: 'transparent' },
+  heroLead: { margin: '24px 0 0', maxWidth: 540, fontSize: 17, lineHeight: 1.78, color: '#526074' },
+  heroActions: { display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 28 },
+  primaryButton: { border: 0, borderRadius: 13, background: 'linear-gradient(135deg,#1477e9,#6246ea)', color: '#fff', padding: '13px 19px', fontWeight: 900, fontSize: 14, cursor: 'pointer', boxShadow: '0 14px 32px rgba(61,91,219,.24)' },
+  secondaryButton: { border: '1px solid #cdd7e5', borderRadius: 13, background: 'rgba(255,255,255,.88)', color: '#315a95', padding: '12px 18px', fontWeight: 850, fontSize: 14, textDecoration: 'none', boxShadow: '0 8px 22px rgba(15,23,42,.05)' },
+  heroFeatureRow: { display: 'flex', flexWrap: 'wrap', gap: 9, marginTop: 28 },
+  heroFeatureChip: { border: '1px solid #d9e2ef', borderRadius: 999, background: 'rgba(255,255,255,.86)', color: '#43516a', padding: '7px 10px', fontSize: 11, fontWeight: 850, boxShadow: '0 6px 18px rgba(15,23,42,.04)' },
+  networkShell: { position: 'relative', minWidth: 0, borderRadius: 28, padding: 10, background: 'linear-gradient(145deg,#061329,#0c2345 45%,#201943)', boxShadow: '0 30px 80px rgba(15,35,83,.28)', border: '1px solid rgba(107,172,255,.34)', transform: 'perspective(1100px) rotateY(-2deg) rotateX(1deg)' },
+  networkSvg: { display: 'block', width: '100%', height: 'auto', overflow: 'visible' },
+  networkTopLabel: { position: 'absolute', top: 18, left: 22, zIndex: 3, color: '#d9efff', fontSize: 11, fontWeight: 900, letterSpacing: '.09em', textTransform: 'uppercase' },
+  methodFloat: { position: 'absolute', right: 22, top: 18, zIndex: 3, display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 5, maxWidth: 260 },
+  networkLegend: { margin: '-2px 16px 12px', display: 'flex', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: 10, color: '#c3cee0', fontSize: 10.5, fontWeight: 750 },
+  methodPill: { borderRadius: 999, padding: '5px 8px', background: 'rgba(83,113,255,.18)', border: '1px solid rgba(154,173,255,.32)', color: '#eef2ff', fontSize: 9, fontWeight: 900, letterSpacing: '.02em' },
   heroStats: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 12, marginTop: 46, maxWidth: 980 },
   stat: { borderTop: '1px solid #ccd6e4', paddingTop: 14 },
   statValue: { fontSize: 24, fontWeight: 950, color: '#183b70', letterSpacing: '-.025em' },
