@@ -15,6 +15,7 @@ type AdvisorResponse = {
   structure: AdvisorStructure;
   analysis: AdvisorAnalysis;
   methodExplanations: Record<MethodName, { th: string; en: string }> | null;
+  sources: Array<{ id: string; url: string; title: string }>;
   meta: {
     advisors: MethodName[];
     calculationMode: string;
@@ -294,7 +295,17 @@ function AdvisorMessage({ result, english }: { result: AdvisorResponse; english:
                       <div key={criterion.id} className={styles.criterion}>
                         <span>
                           <b>{criterion.name}</b>
-                          <small>{criterion.unit} · {criterion.direction === 'benefit' ? (english ? 'higher is better' : 'สูงดี') : (english ? 'lower is better' : 'ต่ำดี')}</small>
+                          <small>
+                            {criterion.unit} · {criterion.direction === 'benefit' ? (english ? 'higher is better' : 'สูงดี') : (english ? 'lower is better' : 'ต่ำดี')}
+                            {' · '}
+                            <em className={`${styles.basisTag} ${criterion.basis === 'web_data' ? styles.webBasis : criterion.basis === 'user_data' ? styles.userBasis : styles.estimateBasis}`}>
+                              {criterion.basis === 'web_data'
+                                ? (english ? 'web evidence' : 'ข้อมูลเว็บ')
+                                : criterion.basis === 'user_data'
+                                  ? (english ? 'user data' : 'ข้อมูลผู้ใช้')
+                                  : (english ? 'AI proxy' : 'proxy AI')}
+                            </em>
+                          </small>
                         </span>
                         <strong>{pct(weightsById.get(criterion.id) ?? 0)}</strong>
                       </div>
@@ -319,6 +330,19 @@ function AdvisorMessage({ result, english }: { result: AdvisorResponse; english:
               </div>
             ))}
           </div>
+
+          {result.sources?.length ? (
+            <div className={styles.sources}>
+              <strong>{english ? 'Sources used' : 'แหล่งข้อมูลที่ใช้'}</strong>
+              <div>
+                {result.sources.slice(0, 6).map((source) => (
+                  <a key={source.id} href={source.url} target="_blank" rel="noreferrer">
+                    {source.title}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {result.structure.caveats.length ? (
             <div className={styles.caveats}>
