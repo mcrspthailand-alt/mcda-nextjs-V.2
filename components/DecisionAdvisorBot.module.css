@@ -116,3 +116,20 @@
   .advisorGrid{grid-template-columns:1fr 1fr}
 }
 @media(prefers-reduced-motion:reduce){.launcher,.pulse i{animation:none!important;transition:none!important}}
+
+
+.basisTag{
+  display:inline-flex;align-items:center;border-radius:999px;padding:1px 5px;
+  font-style:normal;font-size:7.8px;font-weight:850;letter-spacing:.01em;
+}
+.userBasis{background:#edf4ff;color:#315f9f}
+.webBasis{background:#eafbf5;color:#087956}
+.estimateBasis{background:#fff5df;color:#9a6700}
+.sources{border-radius:10px;padding:9px 10px;background:#eef7ff;border:1px solid #d1e5f6}
+.sources>strong{font-size:10px;color:#315f9f}
+.sources>div{display:grid;gap:4px;margin-top:6px}
+.sources a{
+  color:#2563eb;font-size:9px;line-height:1.4;text-decoration:none;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+.sources a:hover{text-decoration:underline}
