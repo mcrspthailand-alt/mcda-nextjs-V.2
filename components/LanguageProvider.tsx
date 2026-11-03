@@ -765,9 +765,9 @@ export default function LanguageProvider({ children }: { children: ReactNode }) 
         style={{
           position: 'fixed', top: 12, right: 12, zIndex: 100000,
           display: 'flex', alignItems: 'center', gap: 6,
-          padding: '6px 8px', border: '1px solid rgba(148,163,184,.45)',
-          borderRadius: 10, background: 'rgba(255,255,255,.97)',
-          boxShadow: '0 8px 24px rgba(15,23,42,.10)', backdropFilter: 'blur(10px)',
+          padding: '6px 8px', border: '1px solid rgba(118,163,232,.36)',
+          borderRadius: 10, background: 'rgba(248,251,255,.97)',
+          boxShadow: '0 10px 28px rgba(8,32,74,.16)', backdropFilter: 'blur(10px)',
           fontFamily: 'Inter, Arial, "Noto Sans Thai", sans-serif', fontSize: 11, fontWeight: 800,
         }}
         aria-label="Language selector"
@@ -777,7 +777,7 @@ export default function LanguageProvider({ children }: { children: ReactNode }) 
           value={language}
           onChange={(event) => setLanguage(event.target.value as SiteLanguage)}
           aria-label="Select language"
-          style={{ border: 0, background: 'transparent', font: 'inherit', cursor: 'pointer', outline: 'none' }}
+          style={{ border: 0, background: 'transparent', color: '#173b6c', font: 'inherit', cursor: 'pointer', outline: 'none' }}
         >
           <option value="th">ไทย</option>
           <option value="en">English</option>
