@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="th" suppressHydrationWarning>
-      <body><LanguageProvider>{children}<AnalyticsTracker />{process.env.AI_GATEWAY_API_KEY ? <DecisionAdvisorBot /> : null}</LanguageProvider></body>
+      <body><LanguageProvider>{children}<AnalyticsTracker /><DecisionAdvisorBot /></LanguageProvider></body>
     </html>
   );
 }
