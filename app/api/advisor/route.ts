@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai';
+import { gateway, generateText, isStepCount, Output } from 'ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getRequestUser } from '@/lib/request-user';
@@ -58,7 +58,7 @@ const decisionStructureSchema = z.object({
         unit: z.string().min(1).max(80),
         direction: z.enum(['benefit', 'cost']),
         values: z.array(z.number().finite().nonnegative()).min(2).max(8),
-        basis: z.enum(['user_data', 'model_estimate']),
+        basis: z.enum(['user_data', 'web_data', 'model_estimate']),
         confidence: z.number().min(0).max(1),
         measurementNote: z.string().min(1).max(500),
       }),
@@ -135,13 +135,14 @@ RULES
 4. direction="benefit" means higher is better. direction="cost" means lower is better.
 5. values MUST contain exactly one finite, non-negative number for every alternative, in the same alternative order.
 6. If the user supplied numeric evidence, use it and set basis="user_data".
-7. If verified numeric evidence is not supplied, DO NOT invent fake factual precision. Use a clearly labelled proxy scale (normally 0-100), set basis="model_estimate", and explain the proxy in measurementNote. Proxy values should represent relative comparative performance, not claimed real-world measurements.
-8. Avoid duplicate or near-duplicate criteria. Prefer factors that discriminate meaningfully among alternatives.
-9. Use non-negative values because the supplied Entropy Weight Method uses p_ij = x_ij / sum(x_ij).
-10. criteriaIds in each group must reference the criterion ids you create.
-11. confidence reflects confidence in the measurement/proxy, not confidence in the final recommendation.
-12. Keep the structure compact enough to be useful in a chat interface.
-13. ${languageInstruction}
+7. When the question depends on current or externally verifiable facts, use the available web search/fetch tools to obtain relevant evidence. Use basis="web_data" for criteria whose numeric values are grounded in retrieved sources.
+8. If verified numeric evidence is still unavailable, DO NOT invent fake factual precision. Use a clearly labelled proxy scale (normally 0-100), set basis="model_estimate", and explain the proxy in measurementNote. Proxy values should represent relative comparative performance, not claimed real-world measurements.
+9. Avoid duplicate or near-duplicate criteria. Prefer factors that discriminate meaningfully among alternatives.
+10. Use non-negative values because the supplied Entropy Weight Method uses p_ij = x_ij / sum(x_ij).
+11. criteriaIds in each group must reference the criterion ids you create.
+12. confidence reflects confidence in the measurement/proxy, not confidence in the final recommendation.
+13. Keep the structure compact enough to be useful in a chat interface.
+14. ${languageInstruction}
 
 The output will be validated strictly. Do not add prose outside the structured output.
 `;
@@ -151,6 +152,11 @@ The output will be validated strictly. Do not add prose outside the structured o
       model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.5',
       reasoning: 'low',
       maxOutputTokens: 6000,
+      tools: {
+        browserbase_search: gateway.tools.browserbaseSearch({ numResults: 5 }),
+        browserbase_fetch: gateway.tools.browserbaseFetch({ allowRedirects: true }),
+      },
+      stopWhen: isStepCount(4),
       output: Output.object({
         name: 'MCDAAdvisorDecisionStructure',
         description:
@@ -161,6 +167,11 @@ The output will be validated strictly. Do not add prose outside the structured o
     });
 
     const structure = result.output as AdvisorStructure;
+    const sources = (result.sources ?? []).flatMap((source) =>
+      source.sourceType === 'url'
+        ? [{ id: source.id, url: source.url, title: source.title ?? source.url }]
+        : [],
+    );
 
     if (structure.criteria.some((criterion) => criterion.values.length !== structure.alternatives.length)) {
       throw new Error('Generated criterion values do not align with alternatives.');
@@ -176,6 +187,7 @@ The output will be validated strictly. Do not add prose outside the structured o
         structure,
         analysis,
         methodExplanations: explain ? METHOD_EXPLANATIONS : null,
+        sources,
         meta: {
           model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.5',
           entropyMethod: 'Entropy Weight Method (EWM)',
