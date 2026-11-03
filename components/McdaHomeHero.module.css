@@ -1,0 +1,34 @@
+.heroGrid {
+  width: 100%;
+}
+
+.networkShell {
+  transition: transform 280ms ease, box-shadow 280ms ease;
+}
+
+.networkShell:hover {
+  transform: perspective(1100px) rotateY(0deg) rotateX(0deg) translateY(-2px) !important;
+  box-shadow: 0 34px 90px rgba(15, 35, 83, .34) !important;
+}
+
+@media (max-width: 980px) {
+  .heroGrid {
+    grid-template-columns: 1fr !important;
+    gap: 30px !important;
+  }
+
+  .networkShell {
+    transform: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .heroGrid {
+    gap: 24px !important;
+  }
+
+  .networkShell {
+    border-radius: 20px !important;
+    padding: 5px !important;
+  }
+}
