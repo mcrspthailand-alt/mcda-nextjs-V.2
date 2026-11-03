@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useMemo, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useLanguage } from '@/components/LanguageProvider';
 import type { AdvisorAnalysis, AdvisorStructure, MethodName } from '@/lib/advisor/mcda';
 import styles from './DecisionAdvisorBot.module.css';
@@ -45,6 +46,7 @@ function pct(value: number) {
 
 export default function DecisionAdvisorBot() {
   const { language } = useLanguage();
+  const pathname = usePathname();
   const english = language === 'en';
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -106,6 +108,8 @@ export default function DecisionAdvisorBot() {
       setLoading(false);
     }
   }
+
+  if (pathname.startsWith('/auth')) return null;
 
   return (
     <>
