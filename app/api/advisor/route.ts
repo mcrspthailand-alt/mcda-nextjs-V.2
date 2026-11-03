@@ -140,8 +140,8 @@ The output will be validated strictly. Do not add prose outside the structured o
     let structure: AdvisorStructure;
     let sources: Array<{ id: string; url: string; title: string }> = [];
     let modelName = process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna';
-    const serviceUrl = process.env.MCDA_ADVISOR_SERVICE_URL?.replace(/\/+$/, '');
-    const serviceSecret = process.env.MCDA_ADVISOR_SERVICE_SECRET;
+    const serviceUrl = (process.env.MCDA_ADVISOR_SERVICE_URL || 'https://mcda-advisor-service.vercel.app').replace(/\/+$/, '');
+    const serviceSecret = process.env.MCDA_ADVISOR_SERVICE_SECRET || process.env.AMS_SERVICE_CODE;
 
     if (serviceUrl && serviceSecret) {
       const response = await fetch(`${serviceUrl}/api/structure`, {
