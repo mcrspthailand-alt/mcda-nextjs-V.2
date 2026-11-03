@@ -1,0 +1,25 @@
+name: Advisor Build Check
+
+on:
+  push:
+    branches: [feat/mcda-advisor-bot]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      AUTH_SECRET: ci-only-placeholder-secret-not-for-production
+      AMS_SERVICE_CODE: mcda-ci-smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Install dependencies
+        run: npm install
+      - name: Test MCDA advisor engine
+        run: node --experimental-strip-types --test tests/mcda-advisor.test.mjs
+      - name: Build Next.js
+        run: npm run build
