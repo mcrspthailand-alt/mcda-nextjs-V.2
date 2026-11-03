@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
+import heroStyles from './McdaHomeHero.module.css';
 
 const timeline = [
   {
@@ -100,7 +101,7 @@ export default function McdaHome({ onOpenAnalysis }: { onOpenAnalysis: () => voi
       <section style={styles.hero}>
         <div style={styles.heroGlowA} />
         <div style={styles.heroGlowB} />
-        <div style={styles.heroGrid}>
+        <div className={heroStyles.heroGrid} style={styles.heroGrid}>
           <div style={styles.heroContent}>
             <div style={styles.eyebrow}>A MULTI-CRITERIA DECISION PLATFORM</div>
             <h1 style={styles.heroTitle}>MCDA for<br /><span style={styles.heroAccent}>Complex Decisions</span></h1>
@@ -385,7 +386,7 @@ function DecisionNetworkHero() {
   ];
 
   return (
-    <div style={styles.networkShell}>
+    <div className={heroStyles.networkShell} style={styles.networkShell}>
       <div style={styles.networkTopLabel}>Decision Structure</div>
       <div style={styles.methodFloat}>
         <span style={styles.methodPill}>AHP</span><span style={styles.methodPill}>TOPSIS</span><span style={styles.methodPill}>PROMETHEE</span><span style={styles.methodPill}>VIKOR</span>
