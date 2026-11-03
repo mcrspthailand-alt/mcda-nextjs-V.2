@@ -667,9 +667,15 @@ const SERVER_MESSAGE_PAIRS: Array<[string, string]> = [
   ['ชำระเงินสำเร็จ เปิดใช้งาน Premium', 'Payment confirmed. Premium access is active for'],
 ];
 
+
+const HOME_HERO_PAIRS: Array<[string, string]> = [
+  ['ประเมิน จัดลำดับ และเปรียบเทียบทางเลือกด้วยหลายเกณฑ์ หลายโมเดล และการวิเคราะห์ความไว เพื่อสนับสนุนการตัดสินใจที่ตรวจสอบเหตุผลได้อย่างเป็นระบบ', 'Evaluate, rank, and compare alternatives across multiple criteria, models, and sensitivity scenarios to support transparent and defensible decisions.'],
+  ['ดูแนวคิดและวิธีการ', 'Explore concepts and methods'],
+];
+
 function translateText(input: string) {
   let output = input;
-  for (const [th, en] of [...PAIRS, ...MCDA_ANALYSIS_PAIRS, ...SITE_COMPLETION_PAIRS, ...SERVER_MESSAGE_PAIRS, ...DYNAMIC_UI_PAIRS, ...GLOBAL_UI_PAIRS].sort((a, b) => b[0].length - a[0].length)) output = output.split(th).join(en);
+  for (const [th, en] of [...PAIRS, ...MCDA_ANALYSIS_PAIRS, ...SITE_COMPLETION_PAIRS, ...SERVER_MESSAGE_PAIRS, ...DYNAMIC_UI_PAIRS, ...HOME_HERO_PAIRS, ...GLOBAL_UI_PAIRS].sort((a, b) => b[0].length - a[0].length)) output = output.split(th).join(en);
   return output;
 }
 
