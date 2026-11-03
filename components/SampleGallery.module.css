@@ -1,8 +1,11 @@
 .page {
   min-height: calc(100vh - 72px);
   padding: 42px 28px 72px;
-  background: #f7f9fc;
-  color: #172033;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(14,165,233,.10), transparent 28%),
+    radial-gradient(circle at 92% 10%, rgba(79,70,229,.09), transparent 30%),
+    linear-gradient(180deg,#f8fbff,#f2f7ff 42%,#f7f9ff);
+  color: #102342;
   font-family: Inter, "Noto Sans Thai", "Segoe UI", Arial, sans-serif;
 }
 
@@ -17,7 +20,7 @@
 
 .eyebrow {
   margin-bottom: 8px;
-  color: #315a95;
+  color: #2563eb;
   font-size: 11px;
   font-weight: 900;
   letter-spacing: .16em;
@@ -41,16 +44,16 @@
 .counter {
   min-width: 112px;
   padding: 12px 14px;
-  border: 1px solid #dbe3ed;
+  border: 1px solid #c8d9f2;
   border-radius: 14px;
   background: #fff;
   text-align: right;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, .05);
+  box-shadow: 0 12px 30px rgba(37, 99, 235, .10);
 }
 
 .counter strong {
   display: block;
-  color: #183b70;
+  color: #1d4ed8;
   font-size: 26px;
   line-height: 1;
 }
@@ -80,25 +83,25 @@
   background:
     linear-gradient(180deg, var(--theme-soft), rgba(255,255,255,.96) 150px),
     #fff;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, .055);
+  box-shadow: 0 16px 38px rgba(30, 74, 145, .085);
 }
 
 .introduction {
-  --theme: #2563a7;
-  --theme-soft: #edf5ff;
-  --theme-border: #bfd6ef;
+  --theme: #2563eb;
+  --theme-soft: #eaf4ff;
+  --theme-border: #b8d2f4;
 }
 
 .theory {
-  --theme: #18865b;
-  --theme-soft: #edf9f3;
-  --theme-border: #b9dfcc;
+  --theme: #0f9f6e;
+  --theme-soft: #eafbf5;
+  --theme-border: #b9e4d3;
 }
 
 .sample {
-  --theme: #d97706;
-  --theme-soft: #fff6e9;
-  --theme-border: #f2d09d;
+  --theme: #f59e0b;
+  --theme-soft: #fff7e8;
+  --theme-border: #f3d49a;
 }
 
 .sectionHeader {
@@ -162,7 +165,7 @@
   border: 1px solid color-mix(in srgb, var(--theme) 24%, #dfe6ef);
   border-radius: 15px;
   background: #fff;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, .05);
+  box-shadow: 0 10px 26px rgba(30, 74, 145, .075);
 }
 
 .videoFrame {
@@ -188,7 +191,7 @@
   gap: 5px;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--theme) 18%, transparent), transparent 70%),
-    #1f2937;
+    linear-gradient(145deg,#0b1f3c,#17184b);
   color: #e5e7eb;
   text-align: center;
 }
