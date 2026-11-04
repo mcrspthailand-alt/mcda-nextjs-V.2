@@ -91,7 +91,7 @@ const analysisWorks = async () => {
 try {
   await page.goto(`${baseURL}/#sample`);
   await selected('sample');
-  assert.equal(await page.locator('#sample iframe').count(), 2);
+  assert.equal(await page.locator('#sample iframe').count(), 4);
   await page.goto(`${baseURL}/#analysis`);
   await analysisWorks();
   const modelBefore = await page.locator('#modelButtonWrap [data-model="topsis"]').getAttribute('class');
