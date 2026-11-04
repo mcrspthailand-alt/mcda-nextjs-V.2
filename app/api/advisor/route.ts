@@ -192,7 +192,7 @@ The output will be validated strictly. Do not add prose outside the structured o
       }
 
       const result = await generateText({
-      model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.5',
+      model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna',
       reasoning: 'low',
       maxOutputTokens: 6000,
       tools: {
