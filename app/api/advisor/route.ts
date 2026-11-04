@@ -2,6 +2,7 @@ import { gateway, generateText, isStepCount, Output } from 'ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getRequestUser } from '@/lib/request-user';
+import { buildLocalAdvisorStructure } from '@/lib/advisor/local-structure';
 import {
   analyzeAdvisorStructure,
   buildDirectAnswer,
@@ -138,83 +139,100 @@ The output will be validated strictly. Do not add prose outside the structured o
 `;
 
   try {
-    let structure: AdvisorStructure;
+    let structure: AdvisorStructure | null = null;
     let sources: Array<{ id: string; url: string; title: string }> = [];
     let modelName = process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna';
     const serviceUrl = (process.env.MCDA_ADVISOR_SERVICE_URL || 'https://mcda-advisor-service.vercel.app').replace(/\/+$/, '');
     const serviceSecret = process.env.MCDA_ADVISOR_SERVICE_SECRET || process.env.AMS_SERVICE_CODE;
 
+    let remoteError: unknown = null;
+
     if (serviceUrl && serviceSecret) {
-      const response = await fetch(`${serviceUrl}/api/structure`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-mcda-advisor-secret': serviceSecret,
-        },
-        body: JSON.stringify(body),
-        cache: 'no-store',
-        signal: AbortSignal.timeout(90_000),
-      });
+      try {
+        const response = await fetch(`${serviceUrl}/api/structure`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-mcda-advisor-secret': serviceSecret,
+          },
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          signal: AbortSignal.timeout(90_000),
+        });
 
-      if (!response.ok) {
-        const detail = await response.text().catch(() => '');
-        throw new Error(`Remote advisor service failed (${response.status}): ${detail.slice(0, 300)}`);
-      }
+        if (!response.ok) {
+          const detail = await response.text().catch(() => '');
+          throw new Error(`Remote advisor service failed (${response.status}): ${detail.slice(0, 300)}`);
+        }
 
-      const payload = (await response.json()) as {
-        structure?: unknown;
-        sources?: Array<{ id: string; url: string; title: string }>;
-      };
-      structure = decisionStructureSchema.parse(payload.structure) as AdvisorStructure;
-      sources = Array.isArray(payload.sources) ? payload.sources : [];
-      const existingSourceUrls = new Set(sources.map((source) => source.url));
-      for (const criterion of structure.criteria) {
-        for (const url of criterion.sourceUrls ?? []) {
-          if (!existingSourceUrls.has(url)) {
-            sources.push({ id: `criterion-${sources.length + 1}`, url, title: url });
-            existingSourceUrls.add(url);
+        const payload = (await response.json()) as {
+          structure?: unknown;
+          sources?: Array<{ id: string; url: string; title: string }>;
+        };
+        structure = decisionStructureSchema.parse(payload.structure) as AdvisorStructure;
+        sources = Array.isArray(payload.sources) ? payload.sources : [];
+        const existingSourceUrls = new Set(sources.map((source) => source.url));
+        for (const criterion of structure.criteria) {
+          for (const url of criterion.sourceUrls ?? []) {
+            if (!existingSourceUrls.has(url)) {
+              sources.push({ id: `criterion-${sources.length + 1}`, url, title: url });
+              existingSourceUrls.add(url);
+            }
           }
         }
+        modelName = 'vercel-ai-gateway-oidc';
+      } catch (error) {
+        remoteError = error;
+        console.warn('Remote MCDA advisor unavailable; trying local fallback', error);
       }
-      modelName = 'vercel-ai-gateway-oidc';
-    } else {
-      if (!process.env.AI_GATEWAY_API_KEY) {
-        return NextResponse.json(
-          {
-            error: 'AI_NOT_CONFIGURED',
-            message:
-              body.language === 'en'
-                ? 'MCDA Advisor AI service is not configured.'
-                : 'ระบบ AI ของ MCDA Advisor ยังไม่ได้ตั้งค่า',
+    }
+
+    if (!structure) {
+      try {
+        const local = await buildLocalAdvisorStructure(body);
+        structure = local.structure;
+        sources = local.sources;
+        modelName = `ollama:${local.model}`;
+      } catch (localError) {
+        console.warn('Local MCDA advisor fallback unavailable', localError);
+
+        if (!process.env.AI_GATEWAY_API_KEY) {
+          throw new AggregateError(
+            [remoteError, localError].filter(Boolean),
+            'No MCDA advisor structure provider is currently available.',
+          );
+        }
+
+        const result = await generateText({
+          model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna',
+          reasoning: 'low',
+          maxOutputTokens: 6000,
+          tools: {
+            browserbase_search: gateway.tools.browserbaseSearch({ numResults: 5 }),
+            browserbase_fetch: gateway.tools.browserbaseFetch({ allowRedirects: true }),
           },
-          { status: 503 },
+          stopWhen: isStepCount(4),
+          output: Output.object({
+            name: 'MCDAAdvisorDecisionStructure',
+            description:
+              'A hierarchical decision structure with alternatives and non-negative measurable criterion data.',
+            schema: decisionStructureSchema,
+          }),
+          prompt,
+        });
+
+        structure = result.output as AdvisorStructure;
+        sources = (result.sources ?? []).flatMap((source) =>
+          source.sourceType === 'url'
+            ? [{ id: source.id, url: source.url, title: source.title ?? source.url }]
+            : [],
         );
+        modelName = process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna';
       }
+    }
 
-      const result = await generateText({
-      model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna',
-      reasoning: 'low',
-      maxOutputTokens: 6000,
-      tools: {
-        browserbase_search: gateway.tools.browserbaseSearch({ numResults: 5 }),
-        browserbase_fetch: gateway.tools.browserbaseFetch({ allowRedirects: true }),
-      },
-      stopWhen: isStepCount(4),
-      output: Output.object({
-        name: 'MCDAAdvisorDecisionStructure',
-        description:
-          'A hierarchical decision structure with alternatives and non-negative measurable criterion data.',
-        schema: decisionStructureSchema,
-      }),
-      prompt,
-    });
-
-      structure = result.output as AdvisorStructure;
-      sources = (result.sources ?? []).flatMap((source) =>
-        source.sourceType === 'url'
-          ? [{ id: source.id, url: source.url, title: source.title ?? source.url }]
-          : [],
-      );
+    if (!structure) {
+      throw new Error('MCDA Advisor did not produce a decision structure.');
     }
 
     if (structure.criteria.some((criterion) => criterion.values.length !== structure.alternatives.length)) {
