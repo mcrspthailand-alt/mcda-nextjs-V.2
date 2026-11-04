@@ -60,6 +60,12 @@ await context.route('**/*', async route => {
   let body;
   if (url.pathname === '/api/auth/me') body = { user };
   else if (url.pathname === '/api/account/entitlements') body = { entitlements };
+  else if (url.pathname === '/api/account/benefits') body = {
+    entitlements: { plan: 'free', premiumUntil: null },
+    trial: { enabled: true, days: 7, eligible: true, claim: null },
+    redeemEnabled: true,
+    redemptions: [],
+  };
   else if (url.pathname === '/api/analysis/authorize') body = { ok: true, entitlements };
   else if (url.pathname === '/api/analytics') body = { ok: true };
   else if (url.pathname === '/api/billing/orders') body = {
@@ -91,7 +97,7 @@ const analysisWorks = async () => {
 try {
   await page.goto(`${baseURL}/#sample`);
   await selected('sample');
-  assert.equal(await page.locator('#sample iframe').count(), 2);
+  assert.equal(await page.locator('#sample iframe').count(), 4);
   await page.goto(`${baseURL}/#analysis`);
   await analysisWorks();
   const modelBefore = await page.locator('#modelButtonWrap [data-model="topsis"]').getAttribute('class');

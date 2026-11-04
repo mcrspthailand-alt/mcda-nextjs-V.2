@@ -160,3 +160,36 @@ The output is decision support, not an assertion that one option is universally 
 - method-specific aggregation logic.
 
 For high-impact decisions, replace proxy estimates with validated measurements and review the hierarchy before acting on the result.
+
+
+## Guided conversational intake
+
+Before analysis, the chatbot collects a compact decision brief in four conversational steps:
+
+1. **Topic** — what the user wants advice about.
+2. **Scope** — geography, time horizon, target group, project type, or decision boundary.
+3. **Constraints** — budget, time, risk, regulation, resources, minimum requirements, or unacceptable outcomes.
+4. **Alternatives / available data** — alternatives already under consideration and any numeric evidence the user already has.
+
+The user may skip a step or choose **Analyze now** after the main topic is known. The gathered answers are compiled into one decision brief before evidence retrieval and MCDA structuring.
+
+## Retrieval and scraping strategy
+
+The production AI structuring service uses a two-speed retrieval design:
+
+- **Browserbase search** discovers relevant current sources.
+- **Cheerio 1.2.0 fast fetch** parses ordinary public HTML/JSON pages and extracts titles, headings, main text, and small tables without running a browser.
+- **Browserbase fetch** is used as a fallback when a page is JavaScript-rendered or the fast extractor returns thin content.
+
+This design intentionally does not make Playwright/Crawlee the default for every request because a full browser is substantially heavier than plain HTTP parsing. Crawlee/Playwright remain appropriate future options for recursive multi-page crawling, scheduled collection, or JavaScript-heavy sources.
+
+The fast extractor:
+
+- accepts only public HTTP/HTTPS URLs;
+- blocks localhost, private network addresses, and common metadata/internal hosts;
+- validates redirects;
+- uses request timeouts and page-size limits;
+- does not access authenticated/private pages;
+- records evidence URLs on the criteria they support.
+
+For externally verifiable criteria, primary/official and recent sources are preferred. Material numeric facts should be corroborated when practical. Search snippets alone are not treated as sufficient support for important numeric values.
