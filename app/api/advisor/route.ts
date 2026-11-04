@@ -60,7 +60,8 @@ const decisionStructureSchema = z.object({
         values: z.array(z.number().finite().nonnegative()).min(2).max(8),
         basis: z.enum(['user_data', 'web_data', 'model_estimate']),
         confidence: z.number().min(0).max(1),
-        measurementNote: z.string().min(1).max(500),
+        measurementNote: z.string().min(1).max(600),
+        sourceUrls: z.array(z.string().url()).max(5).default([]),
       }),
     )
     .min(3)
@@ -124,7 +125,7 @@ RULES
 4. direction="benefit" means higher is better. direction="cost" means lower is better.
 5. values MUST contain exactly one finite, non-negative number for every alternative, in the same alternative order.
 6. If the user supplied numeric evidence, use it and set basis="user_data".
-7. When the question depends on current or externally verifiable facts, use the available web search/fetch tools to obtain relevant evidence. Use basis="web_data" for criteria whose numeric values are grounded in retrieved sources.
+7. When the question depends on current or externally verifiable facts, use the available web search/fetch tools to obtain relevant evidence. Prefer primary/official and recent sources. Use basis="web_data" only for criteria whose numeric values are grounded in retrieved sources, and record those URLs in sourceUrls.
 8. If verified numeric evidence is still unavailable, DO NOT invent fake factual precision. Use a clearly labelled proxy scale (normally 0-100), set basis="model_estimate", and explain the proxy in measurementNote. Proxy values should represent relative comparative performance, not claimed real-world measurements.
 9. Avoid duplicate or near-duplicate criteria. Prefer factors that discriminate meaningfully among alternatives.
 10. Use non-negative values because the supplied Entropy Weight Method uses p_ij = x_ij / sum(x_ij).
@@ -166,6 +167,15 @@ The output will be validated strictly. Do not add prose outside the structured o
       };
       structure = decisionStructureSchema.parse(payload.structure) as AdvisorStructure;
       sources = Array.isArray(payload.sources) ? payload.sources : [];
+      const existingSourceUrls = new Set(sources.map((source) => source.url));
+      for (const criterion of structure.criteria) {
+        for (const url of criterion.sourceUrls ?? []) {
+          if (!existingSourceUrls.has(url)) {
+            sources.push({ id: `criterion-${sources.length + 1}`, url, title: url });
+            existingSourceUrls.add(url);
+          }
+        }
+      }
       modelName = 'vercel-ai-gateway-oidc';
     } else {
       if (!process.env.AI_GATEWAY_API_KEY) {
