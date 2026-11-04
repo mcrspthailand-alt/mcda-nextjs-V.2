@@ -156,7 +156,7 @@ export async function buildLocalAdvisorStructure(input: {
   language: AdvisorLanguage;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
 }) {
-  const searchQuery = input.question.replace(/\s+/g, ' ').slice(0, 700);
+  const searchQuery = input.question.split('\n').slice(0, 4).join(' ').replace(/\s+/g, ' ').slice(0, 520);
   const evidence = await collectAdvisorEvidence(searchQuery, 4);
   const evidenceBlock = evidenceForPrompt(evidence);
   const languageInstruction =
