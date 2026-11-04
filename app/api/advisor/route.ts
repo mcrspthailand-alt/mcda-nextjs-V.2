@@ -67,7 +67,7 @@ const decisionStructureSchema = z.object({
     )
     .min(3)
     .max(12),
-  caveats: z.array(z.string().max(500)).max(6),
+  caveats: z.array(z.string().max(500)).max(8),
 });
 
 function wantsMethodExplanation(question: string) {
