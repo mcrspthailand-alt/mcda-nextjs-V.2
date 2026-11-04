@@ -18,6 +18,7 @@ export type AdvisorCriterion = {
   basis: CriterionBasis;
   confidence: number;
   measurementNote: string;
+  sourceUrls?: string[];
 };
 
 export type AdvisorStructure = {
