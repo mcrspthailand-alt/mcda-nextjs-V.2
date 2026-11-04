@@ -237,7 +237,7 @@ export function evidenceForPrompt(sources: AdvisorEvidenceSource[]) {
       `URL: ${source.url}`,
       `TITLE: ${source.title}`,
       source.snippet ? `SEARCH CONTEXT: ${source.snippet}` : '',
-      `EXTRACT: ${source.text}`,
+      `EXTRACT: ${source.text.slice(0, 2800)}`,
     ].filter(Boolean).join('\n'),
   ).join('\n\n---\n\n');
 }
