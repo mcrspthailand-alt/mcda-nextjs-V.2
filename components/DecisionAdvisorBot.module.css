@@ -179,3 +179,15 @@
 .progressDots{display:flex;align-items:center;gap:4px}
 .progressDots i{width:18px;height:3px;border-radius:999px;background:#e0e7f0}
 .progressDots .progressActive{background:linear-gradient(90deg,#0ea5e9,#5b4de4)}
+
+
+.researchMeta{
+  display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;
+  margin-top:10px;padding-top:9px;border-top:1px solid #e4ebf5;
+  color:#748399;font-size:8.8px;font-weight:750;
+}
+.researchMeta span{
+  display:inline-flex;align-items:center;gap:3px;
+  border-radius:999px;padding:4px 7px;background:#f5f8fc;border:1px solid #e1e8f2;
+}
+.researchMeta b{color:#2563eb}
