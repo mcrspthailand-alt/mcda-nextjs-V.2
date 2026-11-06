@@ -89,6 +89,8 @@ function historyText(history: Array<{ role: 'user' | 'assistant'; content: strin
 }
 
 async function buildStructureRemote(body: z.infer<typeof requestSchema>) {
+  if (process.env.MCDA_ADVISOR_REMOTE_ENABLED !== 'true') return null;
+
   const baseUrl = process.env.MCDA_ADVISOR_SERVICE_URL?.replace(/\/$/, '');
   const secret = process.env.MCDA_ADVISOR_SERVICE_SECRET;
   if (!baseUrl || !secret) return null;
