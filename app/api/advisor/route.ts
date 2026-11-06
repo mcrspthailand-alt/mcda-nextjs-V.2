@@ -2,6 +2,7 @@ import { gateway, generateText, isStepCount, Output } from 'ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getRequestUser } from '@/lib/request-user';
+import { buildLocalAdvisorStructure } from '@/lib/advisor/local-structure';
 import {
   analyzeAdvisorStructure,
   buildDirectAnswer,
@@ -207,20 +208,42 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const remote = await buildStructureRemote(body);
-    const generated = remote ?? (await buildStructureLocal(body));
+    let generated:
+      | {
+          structure: AdvisorStructure;
+          sources: Array<{ id: string; url: string; title: string }>;
+          meta: { model: string; research: boolean; scraper: string };
+        }
+      | null = null;
+
+    let remoteError: unknown = null;
+    try {
+      generated = await buildStructureRemote(body);
+    } catch (error) {
+      remoteError = error;
+      console.warn('Remote MCDA Advisor unavailable; falling back to local Qwen3', error);
+    }
 
     if (!generated) {
-      return NextResponse.json(
-        {
-          error: 'AI_NOT_CONFIGURED',
-          message:
-            body.language === 'en'
-              ? 'MCDA Advisor research service is not configured.'
-              : 'ยังไม่ได้ตั้งค่า MCDA Advisor research service',
-        },
-        { status: 503 },
-      );
+      try {
+        const local = await buildLocalAdvisorStructure(body);
+        generated = {
+          structure: local.structure,
+          sources: local.sources,
+          meta: {
+            model: local.model,
+            research: true,
+            scraper: local.retrieval,
+          },
+        };
+      } catch (localError) {
+        console.warn('Local Qwen3 advisor unavailable; checking direct AI Gateway fallback', localError);
+        generated = await buildStructureLocal(body);
+
+        if (!generated) {
+          throw remoteError ?? localError;
+        }
+      }
     }
 
     const structure = generated.structure;
