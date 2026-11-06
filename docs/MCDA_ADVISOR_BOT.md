@@ -193,3 +193,28 @@ The fast extractor:
 - records evidence URLs on the criteria they support.
 
 For externally verifiable criteria, primary/official and recent sources are preferred. Material numeric facts should be corroborated when practical. Search snippets alone are not treated as sufficient support for important numeric values.
+
+
+## Guided conversation intake
+
+Before research and MCDA, the chatbot collects a compact decision brief through four conversational prompts:
+
+1. **Topic** — what the user wants advice about.
+2. **Scope** — location, time horizon, target group, project type, or decision boundary.
+3. **Constraints** — budget, time, risk, policy, resources, minimum requirements, or unacceptable outcomes.
+4. **Alternatives / available data** — named options and any numeric evidence already available.
+
+The user may skip a question or choose **Analyze now** at any point after a topic is known. The collected answers are compiled into a structured research prompt before external data retrieval begins.
+
+## Research and scraping stack
+
+The production design uses a layered retrieval strategy:
+
+1. **AI Gateway Browserbase search** discovers current public sources.
+2. **Cheerio 1.2.0 fast extraction** reads ordinary static HTML quickly without browser rendering.
+3. **Browserbase fetch** is used as a fallback for JavaScript-heavy, blocked, or dynamically rendered pages.
+4. Retrieved numeric evidence is tagged as `web_data`; user-provided evidence is tagged as `user_data`; unsupported estimates are tagged as `model_estimate`.
+
+Cheerio is intentionally the default parser because it is lightweight and fast for HTML extraction. Full Crawlee/Playwright crawling is not used for every chatbot request because persistent queues and headless browsers add more runtime and deployment overhead. A managed service such as Firecrawl can be added later for large-scale site crawling, document parsing, highlights, or interactive pages when that additional service cost is justified.
+
+The standalone AI research service lives under `services/mcda-advisor-ai` and is deployed to Vercel. It uses Vercel OIDC for AI Gateway authentication, so the Easypanel application does not need an `AI_GATEWAY_API_KEY`.
