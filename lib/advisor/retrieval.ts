@@ -153,6 +153,22 @@ async function searchDuckDuckGo(query: string, limit = 6) {
 
 function extractReadable(html: string) {
   const $ = cheerio.load(html);
+
+  const title = cleanText(
+    $('meta[property="og:title"]').attr('content') ||
+    $('title').first().text() ||
+    $('h1').first().text(),
+  ).slice(0, 280);
+  const description = cleanText(
+    $('meta[name="description"]').attr('content') ||
+    $('meta[property="og:description"]').attr('content') ||
+    '',
+  ).slice(0, 600);
+  const headings = $('h1,h2,h3').slice(0, 28).map((_, node) => cleanText($(node).text())).get().filter(Boolean);
+  const jsonLd = $('script[type="application/ld+json"]').slice(0, 6).map((_, node) =>
+    cleanText($(node).text()).slice(0, 4000),
+  ).get();
+
   $('script,style,noscript,svg,canvas,form,nav,footer,header,aside').remove();
 
   const preferred = $('article').first().length
@@ -162,8 +178,6 @@ function extractReadable(html: string) {
       : $('[role="main"]').first().length
         ? $('[role="main"]').first()
         : $('body');
-
-  const title = cleanText($('title').first().text() || $('h1').first().text()).slice(0, 280);
 
   const tableText: string[] = [];
   preferred.find('table').slice(0, 5).each((_, table) => {
@@ -180,7 +194,14 @@ function extractReadable(html: string) {
   });
 
   const mainText = cleanText(preferred.text()).slice(0, MAX_TEXT_CHARS);
-  const text = [mainText, ...tableText].filter(Boolean).join('\nTABLE:\n').slice(0, MAX_TEXT_CHARS);
+  const structured = [
+    description ? `DESCRIPTION: ${description}` : '',
+    headings.length ? `HEADINGS: ${headings.join(' | ')}` : '',
+    jsonLd.length ? `JSON-LD: ${jsonLd.join(' || ')}` : '',
+    mainText,
+    ...tableText.map((table) => `TABLE:\n${table}`),
+  ].filter(Boolean);
+  const text = structured.join('\n').slice(0, MAX_TEXT_CHARS);
 
   return { title, text };
 }
@@ -188,12 +209,29 @@ function extractReadable(html: string) {
 export async function collectAdvisorEvidence(query: string, limit = 5): Promise<AdvisorEvidenceSource[]> {
   let hits: Array<{ title: string; url: string; snippet: string }> = [];
 
+  const directUrls = Array.from(new Set(
+    (query.match(/https?:\/\/[^\s<>"')\]]+/gi) ?? []).slice(0, 3),
+  )).map((url) => ({ title: url, url, snippet: 'URL supplied directly in the decision brief.' }));
+
   try {
-    hits = await searchDuckDuckGo(query, Math.min(8, limit + 2));
+    const searched = await searchDuckDuckGo(query.replace(/https?:\/\/\S+/g, ' '), Math.min(8, limit + 2));
+    const seen = new Set<string>();
+    hits = [...directUrls, ...searched].filter((hit) => {
+      try {
+        const normalized = new URL(hit.url).toString();
+        if (seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      } catch {
+        return false;
+      }
+    });
   } catch (error) {
     console.warn('MCDA advisor search fallback failed', error);
-    return [];
+    hits = directUrls;
   }
+
+  if (!hits.length) return [];
 
   const settled = await Promise.allSettled(
     hits.slice(0, Math.min(6, limit + 1)).map(async (hit, index) => {
