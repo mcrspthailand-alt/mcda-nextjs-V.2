@@ -19,6 +19,9 @@ type AdvisorResponse = {
   meta: {
     advisors: MethodName[];
     calculationMode: string;
+    research?: boolean;
+    scraper?: string;
+    model?: string;
   };
 };
 
@@ -409,6 +412,10 @@ function AdvisorMessage({ result, english }: { result: AdvisorResponse; english:
         <h3>{result.answer.headline}</h3>
         <p>{result.answer.summary}</p>
         {result.answer.estimateNote ? <div className={styles.estimateNote}>{result.answer.estimateNote}</div> : null}
+        <div className={styles.researchMeta}>
+          <span>{english ? 'Evidence' : 'ข้อมูลประกอบ'} <b>{result.sources?.length ?? 0}</b> {english ? 'sources' : 'แหล่ง'}</span>
+          {result.meta?.scraper ? <span>{result.meta.scraper}</span> : null}
+        </div>
       </div>
 
       <div className={styles.advisorGrid}>
