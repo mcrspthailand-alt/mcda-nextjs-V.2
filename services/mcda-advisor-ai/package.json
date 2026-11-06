@@ -1,0 +1,24 @@
+{
+  "name": "mcda-advisor-ai-service",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "ai": "7.0.161",
+    "cheerio": "1.2.0",
+    "next": "15.5.28",
+    "react": "19.1.8",
+    "react-dom": "19.1.8",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}
