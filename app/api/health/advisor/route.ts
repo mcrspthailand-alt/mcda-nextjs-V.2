@@ -49,10 +49,31 @@ export async function GET() {
     localHealth = false;
   }
 
+  const browserCrawlerUrl = (process.env.MCDA_BROWSER_CRAWLER_URL || 'http://ams_mcda-browser-crawler:3000').replace(/\/+$/, '');
+  let browserCrawlerHealth = false;
+  let browserCrawlerStatus: number | null = null;
+
+  try {
+    const response = await fetch(`${browserCrawlerUrl}/health`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8_000),
+    });
+    browserCrawlerStatus = response.status;
+    browserCrawlerHealth = response.ok;
+  } catch {
+    browserCrawlerHealth = false;
+  }
+
   return NextResponse.json(
     {
       configured: Boolean((serviceUrl && hasSecret) || localHealth),
       primary: serviceUrl && hasSecret ? 'remote-with-local-fallback' : 'local',
+      retrieval: {
+        level1: 'fetch + Cheerio',
+        level2: 'Crawlee + PlaywrightCrawler',
+        browserCrawlerHealth,
+        browserCrawlerStatus,
+      },
       remote: {
         configured: Boolean(serviceUrl && hasSecret),
         health: remoteHealth,
