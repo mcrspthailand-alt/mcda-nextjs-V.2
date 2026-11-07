@@ -207,10 +207,16 @@ export async function buildLocalAdvisorStructure(input: {
     throw new Error('Local advisor criterion values do not align with alternatives.');
   }
 
+  const usedBrowserFallback = evidence.some((source) => source.retrieval === 'browser');
+
   return {
     structure,
     sources: sourceCards(evidence),
     model: process.env.MCDA_LOCAL_LLM_MODEL || DEFAULT_OLLAMA_MODEL,
-    retrieval: evidence.length ? 'cheerio-public-search' : 'local-proxy-only',
+    retrieval: evidence.length
+      ? usedBrowserFallback
+        ? 'fetch + Cheerio → Crawlee + Playwright fallback'
+        : 'fetch + Cheerio'
+      : 'local-proxy-only',
   };
 }
