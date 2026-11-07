@@ -88,6 +88,16 @@ async function renderPage(inputUrl) {
     persistStorage: false,
   });
 
+  const validatedHosts = new Set();
+  const ensurePublicRequest = async (requestUrl) => {
+    const candidate = new URL(requestUrl);
+    if (!['http:', 'https:'].includes(candidate.protocol)) throw new Error('Non-HTTP browser request blocked.');
+    if (!validatedHosts.has(candidate.hostname)) {
+      await assertPublicUrl(candidate.toString());
+      validatedHosts.add(candidate.hostname);
+    }
+  };
+
   const crawler = new PlaywrightCrawler({
     headless: true,
     maxConcurrency: 1,
@@ -105,9 +115,19 @@ async function renderPage(inputUrl) {
       async ({ page }, gotoOptions) => {
         gotoOptions.waitUntil = 'domcontentloaded';
         gotoOptions.timeout = 25_000;
+        page.on('download', (download) => void download.cancel().catch(() => undefined));
         await page.route('**/*', async (route) => {
+          const requestUrl = route.request().url();
           const type = route.request().resourceType();
+
           if (['image', 'media', 'font'].includes(type)) return route.abort();
+
+          try {
+            await ensurePublicRequest(requestUrl);
+          } catch {
+            return route.abort();
+          }
+
           return route.continue();
         });
       },
