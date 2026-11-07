@@ -8,6 +8,7 @@ export type AdvisorEvidenceSource = {
   title: string;
   snippet: string;
   text: string;
+  retrieval: 'fast' | 'browser';
 };
 
 const MAX_HTML_BYTES = 1_500_000;
@@ -81,6 +82,60 @@ function unwrapDuckDuckGo(raw: string) {
   } catch {
     return '';
   }
+}
+
+async function fetchBrowserRenderedPage(input: string) {
+  const url = (await assertPublicUrl(input)).toString();
+  if (process.env.MCDA_BROWSER_CRAWLER_ENABLED === 'false') {
+    throw new Error('Browser crawler fallback is disabled.');
+  }
+
+  const baseUrl = (process.env.MCDA_BROWSER_CRAWLER_URL || 'http://ams_mcda-browser-crawler:3000').replace(/\/+$/, '');
+  const response = await fetch(baseUrl + '/render', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+    cache: 'no-store',
+    signal: AbortSignal.timeout(45_000),
+  });
+
+  const payload = await response.json().catch(() => null) as null | {
+    ok?: boolean;
+    url?: string;
+    title?: string;
+    description?: string;
+    headings?: string[];
+    tables?: string[][][];
+    jsonLd?: string[];
+    text?: string;
+    error?: string;
+  };
+
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.error || `Browser crawler HTTP ${response.status}`);
+  }
+
+  if (!payload.url) throw new Error('Browser crawler returned no URL.');
+  await assertPublicUrl(payload.url);
+
+  const structured = [
+    payload.description ? `DESCRIPTION: ${cleanText(payload.description)}` : '',
+    payload.headings?.length ? `HEADINGS: ${payload.headings.map(cleanText).join(' | ')}` : '',
+    payload.jsonLd?.length ? `JSON-LD: ${payload.jsonLd.map(cleanText).join(' || ')}` : '',
+    cleanText(payload.text || ''),
+    ...(payload.tables ?? []).map((table) =>
+      `TABLE:\n${table.map((row) => row.map(cleanText).join(' | ')).join('\n')}`
+    ),
+  ].filter(Boolean);
+
+  const text = structured.join('\n').slice(0, MAX_TEXT_CHARS);
+  if (text.length < 250) throw new Error('Browser-rendered page still has insufficient extractable text.');
+
+  return {
+    url: payload.url,
+    title: cleanText(payload.title || ''),
+    text,
+  };
 }
 
 async function fetchTextPage(input: string) {
@@ -235,29 +290,50 @@ export async function collectAdvisorEvidence(query: string, limit = 5): Promise<
 
   const settled = await Promise.allSettled(
     hits.slice(0, Math.min(6, limit + 1)).map(async (hit, index) => {
-      const fetched = await fetchTextPage(hit.url);
-      if (!/html|text|json/i.test(fetched.contentType)) throw new Error('Unsupported content type.');
+      try {
+        const fetched = await fetchTextPage(hit.url);
+        if (!/html|text|json/i.test(fetched.contentType)) throw new Error('Unsupported content type.');
 
-      if (/json/i.test(fetched.contentType)) {
+        if (/json/i.test(fetched.contentType)) {
+          const text = cleanText(fetched.text).slice(0, MAX_TEXT_CHARS);
+          if (text.length < 250) throw new Error('Insufficient JSON content.');
+          return {
+            id: `web-${index + 1}`,
+            url: fetched.url,
+            title: hit.title,
+            snippet: hit.snippet,
+            text,
+            retrieval: 'fast' as const,
+          };
+        }
+
+        const extracted = extractReadable(fetched.text);
+        if (extracted.text.length < 250) throw new Error('Insufficient extractable text.');
+
         return {
           id: `web-${index + 1}`,
           url: fetched.url,
-          title: hit.title,
+          title: extracted.title || hit.title,
           snippet: hit.snippet,
-          text: cleanText(fetched.text).slice(0, MAX_TEXT_CHARS),
+          text: extracted.text,
+          retrieval: 'fast' as const,
+        };
+      } catch (fastError) {
+        console.info('MCDA advisor Level 1 extraction failed; trying browser fallback', {
+          url: hit.url,
+          error: fastError instanceof Error ? fastError.message : String(fastError),
+        });
+
+        const browser = await fetchBrowserRenderedPage(hit.url);
+        return {
+          id: `web-${index + 1}`,
+          url: browser.url,
+          title: browser.title || hit.title,
+          snippet: hit.snippet,
+          text: browser.text,
+          retrieval: 'browser' as const,
         };
       }
-
-      const extracted = extractReadable(fetched.text);
-      if (extracted.text.length < 250) throw new Error('Insufficient extractable text.');
-
-      return {
-        id: `web-${index + 1}`,
-        url: fetched.url,
-        title: extracted.title || hit.title,
-        snippet: hit.snippet,
-        text: extracted.text,
-      };
     }),
   );
 
