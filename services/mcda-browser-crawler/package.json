@@ -1,0 +1,16 @@
+{
+  "name": "mcda-browser-crawler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "crawlee": "3.18.2",
+    "playwright": "1.65.0"
+  }
+}
