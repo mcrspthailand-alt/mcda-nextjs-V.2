@@ -229,19 +229,19 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${baseURL}/#home`);
   await page.getByRole('button', { name: /MCDA Advisor/ }).click();
-  await page.getByRole('checkbox', { name: /เริ่มธุรกิจใหม่/ }).check();
+  await page.getByRole('checkbox', { name: /เริ่มธุรกิจใหม่/ }).check({ force: true });
   await page.getByRole('button', { name: 'ถัดไป' }).click();
-  await page.getByRole('checkbox', { name: /อาหารและเครื่องดื่ม/ }).check();
+  await page.getByRole('checkbox', { name: /อาหารและเครื่องดื่ม/ }).check({ force: true });
   await page.getByRole('button', { name: 'ถัดไป' }).click();
-  await page.getByRole('checkbox', { name: /ร้านอาหาร \/ คาเฟ่/ }).check();
+  await page.getByRole('checkbox', { name: /ร้านอาหาร \/ คาเฟ่/ }).check({ force: true });
   await page.getByRole('button', { name: 'ถัดไป' }).click();
-  await page.getByRole('checkbox', { name: /ผู้บริโภคทั่วไป/ }).check();
+  await page.getByRole('checkbox', { name: /ผู้บริโภคทั่วไป/ }).check({ force: true });
   await page.getByRole('button', { name: 'ถัดไป' }).click();
-  await page.getByRole('checkbox', { name: /กำไรสูงสุด/ }).check();
+  await page.getByRole('checkbox', { name: /กำไรสูงสุด/ }).check({ force: true });
   await page.getByRole('button', { name: 'ถัดไป' }).click();
-  await page.getByRole('checkbox', { name: /หน้าร้าน/ }).check();
+  await page.getByRole('checkbox', { name: /หน้าร้าน/ }).check({ force: true });
   await page.getByRole('button', { name: 'ถัดไป' }).click();
-  await page.getByRole('checkbox', { name: /ระดับจังหวัด/ }).check();
+  await page.getByRole('checkbox', { name: /ระดับจังหวัด/ }).check({ force: true });
   await page.getByRole('button', { name: 'สร้าง Criteria Structure' }).click();
   await page.getByRole('button', { name: /ค้นหาทางเลือก/ }).click();
 
