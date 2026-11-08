@@ -145,15 +145,17 @@ Convert the question into a decision-ready hierarchical data structure. A determ
 RULES
 1. Preserve alternatives explicitly named by the user. If alternatives are not stated, propose 3-5 realistic and materially different alternatives.
 2. Build 2-5 factor groups and 4-10 measurable criteria.
-3. Convert vague concepts into measurable proxies.
-4. direction="benefit" means higher is better; direction="cost" means lower is better.
-5. values MUST contain exactly one finite, non-negative number for every alternative.
-6. Use basis="user_data" for user-provided numeric evidence.
-7. For current facts, use the available web tools and basis="web_data" only when supported by retrieved evidence.
-8. Otherwise use transparent 0-100 proxy scores and basis="model_estimate".
-9. Avoid duplicate criteria.
-10. Keep the hierarchy compact.
-11. ${languageInstruction}
+3. Prefer tangible observed variables first: price, cost, distance, travel time, customer volume, population, income, market size, growth rate, competitor count, ratings, utilization, occupancy, service coverage, conversion, repeat purchase, margin, or other operational metrics.
+4. Convert vague concepts into proxy scores only when no defensible measurable variable can be retrieved.
+5. direction="benefit" means higher is better; direction="cost" means lower is better.
+6. values MUST contain exactly one finite, non-negative number for every alternative.
+7. Use basis="user_data" for user-provided numeric evidence.
+8. For current facts, use the available web tools and basis="web_data" only when supported by retrieved evidence.
+9. Do not use subjective labels such as convenience, attractiveness, quality, or potential as raw criteria when they can be operationalized into tangible data.
+10. Otherwise use transparent 0-100 proxy scores and basis="model_estimate", with lower confidence and an explicit measurementNote.
+11. Avoid duplicate criteria.
+12. Keep the hierarchy compact.
+13. ${languageInstruction}
 `;
 
   const result = await generateText({
