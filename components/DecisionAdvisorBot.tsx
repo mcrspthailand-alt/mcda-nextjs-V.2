@@ -32,7 +32,8 @@ type ChatMessage = {
   result?: AdvisorResponse;
 };
 
-type WizardStep = 'sector' | 'subsector' | 'target' | 'expectation' | 'model' | 'constraints';
+type WizardStep = 'interest' | 'sector' | 'subsector' | 'target' | 'expectation' | 'model' | 'constraints';
+type FlowPhase = 'scope' | 'criteria' | 'result';
 
 type Option = {
   id: string;
@@ -45,6 +46,7 @@ type Option = {
 type Sector = Option & { children: Option[] };
 
 type ScopeDraft = {
+  interest: string[];
   sector: string[];
   subsector: string[];
   target: string[];
@@ -54,6 +56,7 @@ type ScopeDraft = {
 };
 
 const EMPTY_SCOPE: ScopeDraft = {
+  interest: [],
   sector: [],
   subsector: [],
   target: [],
@@ -62,7 +65,17 @@ const EMPTY_SCOPE: ScopeDraft = {
   constraints: [],
 };
 
-const STEPS: WizardStep[] = ['sector', 'subsector', 'target', 'expectation', 'model', 'constraints'];
+const STEPS: WizardStep[] = ['interest', 'sector', 'subsector', 'target', 'expectation', 'model', 'constraints'];
+
+
+const INTERESTS: Option[] = [
+  { id: 'start-new', th: 'เริ่มธุรกิจใหม่', en: 'Start a New Business', hintTh: 'ค้นหาธุรกิจที่เหมาะกับ Scope และทรัพยากรที่มี', hintEn: 'Find a business that fits your scope and resources' },
+  { id: 'expand', th: 'ขยายธุรกิจเดิม', en: 'Expand an Existing Business', hintTh: 'มองหาตลาด กลุ่มลูกค้า หรือรูปแบบรายได้ใหม่', hintEn: 'Explore new markets, customers, or revenue models' },
+  { id: 'product-service', th: 'เลือกสินค้า / บริการที่จะทำ', en: 'Choose a Product / Service', hintTh: 'เปรียบเทียบสิ่งที่ควรนำไปทำตลาด', hintEn: 'Compare what to bring to market' },
+  { id: 'location', th: 'เลือกทำเล / พื้นที่ตลาด', en: 'Choose a Location / Market Area', hintTh: 'เน้นข้อมูลประชากร รายได้ คู่แข่ง และการเข้าถึง', hintEn: 'Focus on population, income, competition, and access' },
+  { id: 'online-model', th: 'สร้างธุรกิจออนไลน์ / Platform', en: 'Build an Online / Platform Business', hintTh: 'SaaS, Marketplace, Subscription, Digital Service', hintEn: 'SaaS, marketplace, subscription, digital service' },
+  { id: 'feasibility', th: 'ประเมินความเป็นไปได้ของไอเดีย', en: 'Evaluate Business Feasibility', hintTh: 'วิเคราะห์ความคุ้มค่า ความเสี่ยง และศักยภาพตลาด', hintEn: 'Assess viability, risk, and market potential' },
+];
 
 const SECTORS: Sector[] = [
   {
@@ -250,6 +263,85 @@ const CONSTRAINTS: Option[] = [
   { id: 'avoid-regulation', th: 'หลีกเลี่ยงธุรกิจที่มีกฎระเบียบสูง', en: 'Avoid Highly Regulated Business' },
 ];
 
+
+type CriterionTemplate = {
+  id: string;
+  group: 'market' | 'financial' | 'operations' | 'risk' | 'growth' | 'impact';
+  th: string;
+  en: string;
+  unitTh: string;
+  unitEn: string;
+  direction: 'benefit' | 'cost';
+  reasonTh: string;
+  reasonEn: string;
+};
+
+const CRITERIA: Record<string, CriterionTemplate> = {
+  market_size: { id:'market_size', group:'market', th:'ขนาดตลาดเป้าหมาย', en:'Target Market Size', unitTh:'คน / ธุรกิจ', unitEn:'people / businesses', direction:'benefit', reasonTh:'ตลาดที่ใหญ่กว่ามีฐานลูกค้าที่เป็นไปได้มากกว่า', reasonEn:'Larger addressable markets offer more potential customers' },
+  market_growth: { id:'market_growth', group:'market', th:'อัตราการเติบโตของตลาด', en:'Market Growth Rate', unitTh:'% ต่อปี', unitEn:'% / year', direction:'benefit', reasonTh:'สะท้อนแนวโน้มการขยายตัวของอุปสงค์', reasonEn:'Captures demand expansion over time' },
+  target_income: { id:'target_income', group:'market', th:'รายได้ / กำลังซื้อของกลุ่มเป้าหมาย', en:'Target Customer Income / Purchasing Power', unitTh:'บาท/เดือน', unitEn:'THB/month', direction:'benefit', reasonTh:'เชื่อมโยงกับความสามารถในการจ่ายของลูกค้า', reasonEn:'Relates to customer ability to pay' },
+  competitor_count: { id:'competitor_count', group:'risk', th:'จำนวนคู่แข่งโดยตรง', en:'Direct Competitor Count', unitTh:'ราย', unitEn:'businesses', direction:'cost', reasonTh:'คู่แข่งมากขึ้นทำให้การเข้าสู่ตลาดยากขึ้น', reasonEn:'More direct competitors increase market-entry pressure' },
+  startup_cost: { id:'startup_cost', group:'financial', th:'เงินลงทุนเริ่มต้น', en:'Startup Investment', unitTh:'บาท', unitEn:'THB', direction:'cost', reasonTh:'สัมพันธ์โดยตรงกับข้อจำกัดด้านงบประมาณ', reasonEn:'Directly tied to capital constraints' },
+  operating_cost: { id:'operating_cost', group:'financial', th:'ต้นทุนดำเนินงานต่อเดือน', en:'Monthly Operating Cost', unitTh:'บาท/เดือน', unitEn:'THB/month', direction:'cost', reasonTh:'มีผลต่อกระแสเงินสดและจุดคุ้มทุน', reasonEn:'Affects cash flow and break-even' },
+  revenue_potential: { id:'revenue_potential', group:'financial', th:'ศักยภาพรายได้ต่อเดือน', en:'Monthly Revenue Potential', unitTh:'บาท/เดือน', unitEn:'THB/month', direction:'benefit', reasonTh:'ใช้เปรียบเทียบโอกาสสร้างรายได้ของแต่ละทางเลือก', reasonEn:'Compares revenue opportunity across alternatives' },
+  gross_margin: { id:'gross_margin', group:'financial', th:'อัตรากำไรขั้นต้น', en:'Gross Margin', unitTh:'%', unitEn:'%', direction:'benefit', reasonTh:'สะท้อนความสามารถในการสร้างกำไรจากยอดขาย', reasonEn:'Measures profit generation from sales' },
+  break_even: { id:'break_even', group:'financial', th:'ระยะเวลาคืนทุน / Break-even', en:'Break-even Period', unitTh:'เดือน', unitEn:'months', direction:'cost', reasonTh:'สอดคล้องกับเป้าหมายคืนทุนเร็ว', reasonEn:'Directly reflects fast payback goals' },
+  launch_time: { id:'launch_time', group:'operations', th:'ระยะเวลาเริ่มดำเนินธุรกิจ', en:'Time to Launch', unitTh:'เดือน', unitEn:'months', direction:'cost', reasonTh:'สะท้อนความเร็วในการเริ่มสร้างรายได้', reasonEn:'Measures how quickly the business can start earning' },
+  operational_complexity: { id:'operational_complexity', group:'operations', th:'ความซับซ้อนในการดำเนินงาน', en:'Operational Complexity', unitTh:'Scale 1–5', unitEn:'Scale 1–5', direction:'cost', reasonTh:'ใช้ Scale เมื่อไม่มีตัวเลขตรง โดยกำหนดเกณฑ์จากจำนวนกระบวนการ/ทีม/ระบบที่ต้องบริหาร', reasonEn:'Scaled when direct measurement is unavailable, based on processes, team, and systems required' },
+  regulatory_burden: { id:'regulatory_burden', group:'risk', th:'ภาระด้านกฎระเบียบ / ใบอนุญาต', en:'Regulatory Burden', unitTh:'Scale 1–5', unitEn:'Scale 1–5', direction:'cost', reasonTh:'ใช้ Scale จากจำนวนและความซับซ้อนของใบอนุญาต/ข้อกำกับ', reasonEn:'Scaled by number and complexity of permits and regulations' },
+  recurring_fit: { id:'recurring_fit', group:'growth', th:'ความเหมาะสมต่อรายได้ประจำ', en:'Recurring Revenue Fit', unitTh:'Scale 1–5', unitEn:'Scale 1–5', direction:'benefit', reasonTh:'ใช้ Scale ตามความเป็นไปได้ของ Subscription/Repeat Purchase', reasonEn:'Scaled by subscription or repeat-purchase potential' },
+  scalability: { id:'scalability', group:'growth', th:'ศักยภาพในการขยายธุรกิจ', en:'Scalability', unitTh:'Scale 1–5', unitEn:'Scale 1–5', direction:'benefit', reasonTh:'ใช้ Scale จากความสามารถในการเพิ่มลูกค้าโดยไม่เพิ่มต้นทุนตามสัดส่วน', reasonEn:'Scaled by ability to grow customers without proportional cost growth' },
+  local_jobs: { id:'local_jobs', group:'impact', th:'การจ้างงานที่สร้างได้', en:'Jobs Created', unitTh:'ตำแหน่งงาน', unitEn:'jobs', direction:'benefit', reasonTh:'ใช้เมื่อเป้าหมายมีมิติผลกระทบต่อพื้นที่/สังคม', reasonEn:'Used when local or social impact is a goal' },
+  rent: { id:'rent', group:'financial', th:'ค่าเช่าพื้นที่', en:'Commercial Rent', unitTh:'บาท/เดือน', unitEn:'THB/month', direction:'cost', reasonTh:'สำคัญกับธุรกิจหน้าร้านและการเลือกทำเล', reasonEn:'Important for physical-location businesses' },
+  footfall: { id:'footfall', group:'market', th:'จำนวนคนผ่าน / Footfall', en:'Footfall', unitTh:'คน/วัน', unitEn:'people/day', direction:'benefit', reasonTh:'สะท้อนโอกาสเข้าถึงลูกค้าหน้าร้าน', reasonEn:'Measures physical customer exposure' },
+  average_ticket: { id:'average_ticket', group:'financial', th:'ยอดใช้จ่ายเฉลี่ยต่อรายการ', en:'Average Ticket Size', unitTh:'บาท/รายการ', unitEn:'THB/transaction', direction:'benefit', reasonTh:'ใช้ประเมินศักยภาพรายได้ของร้านค้า/บริการ', reasonEn:'Supports revenue potential for retail/service models' },
+  target_learners: { id:'target_learners', group:'market', th:'จำนวนผู้เรียนเป้าหมาย', en:'Addressable Learners', unitTh:'คน', unitEn:'people', direction:'benefit', reasonTh:'เหมาะกับ Education/EdTech และวัดตลาดเป้าหมายโดยตรง', reasonEn:'Direct measure of addressable education market' },
+  subscription_price: { id:'subscription_price', group:'financial', th:'ราคาสมาชิก / ค่าบริการเฉลี่ย', en:'Average Subscription / Service Price', unitTh:'บาท/เดือน', unitEn:'THB/month', direction:'benefit', reasonTh:'สะท้อนรายได้ต่อผู้ใช้ในโมเดลสมาชิก', reasonEn:'Captures revenue per user for recurring models' },
+  tourist_arrivals: { id:'tourist_arrivals', group:'market', th:'จำนวนนักท่องเที่ยว', en:'Tourist Arrivals', unitTh:'คน/ปี', unitEn:'visitors/year', direction:'benefit', reasonTh:'เป็นตัววัดอุปสงค์หลักในธุรกิจท่องเที่ยว', reasonEn:'Core demand measure for tourism businesses' },
+  occupancy: { id:'occupancy', group:'market', th:'อัตราการเข้าพัก / การใช้บริการ', en:'Occupancy / Utilization Rate', unitTh:'%', unitEn:'%', direction:'benefit', reasonTh:'สะท้อนการใช้กำลังการให้บริการจริง', reasonEn:'Measures actual service utilization' },
+  logistics_cost: { id:'logistics_cost', group:'operations', th:'ต้นทุนโลจิสติกส์', en:'Logistics Cost', unitTh:'บาท/หน่วย', unitEn:'THB/unit', direction:'cost', reasonTh:'สำคัญกับ E-commerce การผลิต และการกระจายสินค้า', reasonEn:'Important for commerce, manufacturing, and distribution' },
+};
+
+const GROUP_LABELS = {
+  market: { th:'ตลาดและลูกค้า', en:'Market & Customer' },
+  financial: { th:'การเงินและความคุ้มค่า', en:'Financial Viability' },
+  operations: { th:'การดำเนินงาน', en:'Operations' },
+  risk: { th:'การแข่งขันและความเสี่ยง', en:'Competition & Risk' },
+  growth: { th:'การเติบโต', en:'Growth' },
+  impact: { th:'ผลกระทบ', en:'Impact' },
+} as const;
+
+function criteriaForScope(scope: ScopeDraft) {
+  const ids: string[] = [];
+  const add = (...items: string[]) => items.forEach((item) => { if (!ids.includes(item)) ids.push(item); });
+
+  // Objective-driven criteria first.
+  if (scope.expectation.includes('profit')) add('revenue_potential','gross_margin','operating_cost','startup_cost');
+  if (scope.expectation.includes('revenue-growth')) add('market_size','market_growth','revenue_potential');
+  if (scope.expectation.includes('fast-break-even')) add('startup_cost','break_even','operating_cost','launch_time');
+  if (scope.expectation.includes('recurring')) add('recurring_fit','subscription_price','market_size');
+  if (scope.expectation.includes('low-risk')) add('competitor_count','regulatory_burden','operational_complexity','startup_cost');
+  if (scope.expectation.includes('scale')) add('scalability','market_size','market_growth','operational_complexity');
+  if (scope.expectation.includes('market-share')) add('market_size','competitor_count','market_growth');
+  if (scope.expectation.includes('brand')) add('market_size','target_income','competitor_count');
+  if (scope.expectation.includes('impact')) add('local_jobs','market_size');
+
+  // Sector-specific measurable variables.
+  if (scope.sector.includes('food')) add('rent','footfall','average_ticket','competitor_count','operating_cost');
+  if (scope.sector.includes('retail')) add('target_income','market_size','rent','average_ticket','logistics_cost','competitor_count');
+  if (scope.sector.includes('education')) add('target_learners','subscription_price','market_growth','competitor_count','operating_cost');
+  if (scope.sector.includes('health')) add('market_size','target_income','rent','regulatory_burden','competitor_count');
+  if (scope.sector.includes('services')) add('market_size','average_ticket','operating_cost','competitor_count','launch_time');
+  if (scope.sector.includes('technology')) add('market_size','market_growth','subscription_price','startup_cost','operating_cost','competitor_count','scalability');
+  if (scope.sector.includes('tourism')) add('tourist_arrivals','occupancy','average_ticket','market_growth','competitor_count','operating_cost');
+  if (scope.sector.includes('manufacturing')) add('startup_cost','operating_cost','logistics_cost','market_size','market_growth','regulatory_burden');
+  if (scope.sector.includes('property')) add('rent','occupancy','market_growth','target_income','competitor_count');
+  if (scope.sector.includes('creative')) add('market_size','average_ticket','operating_cost','competitor_count','scalability');
+
+  if (!ids.length) add('market_size','market_growth','startup_cost','operating_cost','revenue_potential','competitor_count','launch_time');
+  return ids.slice(0, 10).map((item) => CRITERIA[item]).filter(Boolean);
+}
+
 const METHOD_TONE: Record<MethodName, string> = {
   TOPSIS: styles.topsis,
   VIKOR: styles.vikor,
@@ -272,26 +364,29 @@ function label(option: Option, english: boolean) {
 
 function wizardTitle(step: WizardStep, english: boolean) {
   const th: Record<WizardStep, string> = {
-    sector: '1. คุณกำลังสนใจธุรกิจกลุ่มไหน?',
-    subsector: '2. เจาะลงไปอีกระดับ — ธุรกิจแบบไหน?',
-    target: '3. กลุ่มเป้าหมายหลักคือใคร?',
-    expectation: '4. คุณคาดหวังอะไรจากธุรกิจนี้?',
-    model: '5. ต้องการ Business Model แบบไหน?',
-    constraints: '6. ขอบเขตและข้อจำกัดมีอะไรบ้าง?',
+    interest: '1. ตอนนี้คุณกำลังสนใจอะไร?',
+    sector: '2. ความสนใจนี้อยู่ในกลุ่มธุรกิจใด?',
+    subsector: '3. เจาะลงไปอีกระดับ — ธุรกิจแบบไหน?',
+    target: '4. กลุ่มเป้าหมายหลักคือใคร?',
+    expectation: '5. คุณคาดหวังอะไรจากการตัดสินใจครั้งนี้?',
+    model: '6. Business ควรเป็นรูปแบบไหน?',
+    constraints: '7. ขอบเขตและข้อจำกัดมีอะไรบ้าง?',
   };
   const en: Record<WizardStep, string> = {
-    sector: '1. Which business sector interests you?',
-    subsector: '2. Narrow it down — what type of business?',
-    target: '3. Who is the primary target customer?',
-    expectation: '4. What do you expect from this business?',
-    model: '5. Which business model fits your intent?',
-    constraints: '6. What scope and constraints apply?',
+    interest: '1. What are you interested in doing?',
+    sector: '2. Which business sector does this belong to?',
+    subsector: '3. Narrow it down — what type of business?',
+    target: '4. Who is the primary target customer?',
+    expectation: '5. What outcome do you expect from this decision?',
+    model: '6. Which business model fits your intent?',
+    constraints: '7. What scope and constraints apply?',
   };
   return english ? en[step] : th[step];
 }
 
 function wizardHint(step: WizardStep, english: boolean) {
   const th: Record<WizardStep, string> = {
+    interest: 'เลือกสิ่งที่ต้องการตัดสินใจ ระบบจะใช้เพื่อกำหนดกรอบคำถามต่อไป',
     sector: 'เลือกได้ 1–2 กลุ่ม เพื่อให้ Scope ไม่กว้างเกินไป',
     subsector: 'เลือกประเภทธุรกิจที่ใกล้กับสิ่งที่อยากทำมากที่สุด',
     target: 'เลือกได้หลายกลุ่ม ระบบจะใช้เป็นเงื่อนไขในการค้นข้อมูลตลาด',
@@ -300,6 +395,7 @@ function wizardHint(step: WizardStep, english: boolean) {
     constraints: 'กำหนดพื้นที่ งบ เวลา และข้อจำกัด เพื่อให้ทางเลือกที่ได้ใช้งานจริง',
   };
   const en: Record<WizardStep, string> = {
+    interest: 'Choose the decision intent; it will shape the rest of the scope.',
     sector: 'Choose 1–2 sectors to keep the scope focused.',
     subsector: 'Select the business types closest to what you want to explore.',
     target: 'Select multiple groups if needed; these guide market evidence retrieval.',
@@ -319,22 +415,24 @@ function compiledScope(scope: ScopeDraft, english: boolean) {
 
   const lines = english
     ? [
+        `Decision intent: ${names(scope.interest, INTERESTS).join(', ')}`,
         `Business sectors: ${names(scope.sector, SECTORS).join(', ')}`,
         `Business types: ${names(scope.subsector, childOptions).join(', ')}`,
         `Target customers: ${names(scope.target, TARGETS).join(', ')}`,
         `Business expectations: ${names(scope.expectation, EXPECTATIONS).join(', ')}`,
         `Business models: ${names(scope.model, MODELS).join(', ')}`,
         `Scope / constraints: ${names(scope.constraints, CONSTRAINTS).join(', ')}`,
-        'Task: identify realistic business alternatives inside this scope. Retrieve current tangible/measurable evidence first. Build measurable criteria using observed data where available, clearly label proxies where evidence is unavailable, then prepare the decision matrix for Entropy weighting and the five MCDA advisors.',
+        'Scope definition only. Criteria are defined separately before alternatives are discovered.',
       ]
     : [
+        `สิ่งที่สนใจ / เป้าหมายการตัดสินใจ: ${names(scope.interest, INTERESTS).join(', ')}`,
         `กลุ่มธุรกิจ: ${names(scope.sector, SECTORS).join(', ')}`,
         `ประเภทธุรกิจย่อย: ${names(scope.subsector, childOptions).join(', ')}`,
         `กลุ่มเป้าหมาย: ${names(scope.target, TARGETS).join(', ')}`,
         `ความคาดหวังจากธุรกิจ: ${names(scope.expectation, EXPECTATIONS).join(', ')}`,
         `Business Model: ${names(scope.model, MODELS).join(', ')}`,
         `ขอบเขต/ข้อจำกัด: ${names(scope.constraints, CONSTRAINTS).join(', ')}`,
-        'งานที่ต้องทำ: เสนอทางเลือกธุรกิจที่เป็นไปได้ภายใน Scope นี้ จากนั้นรวบรวม Tangible / Measurable Data ที่ตรวจสอบได้ก่อน สร้าง Criteria จากข้อมูลเชิงปริมาณหรือข้อมูลที่วัดได้ ใช้ proxy เฉพาะเมื่อหาข้อมูลจริงไม่ได้และต้องติดป้ายให้ชัด แล้วเตรียม Decision Matrix เพื่อคำนวณ Entropy Weight และ MCDA 5 วิธี',
+        'นี่คือ Scope เท่านั้น โดย Criteria จะถูกกำหนดก่อนค้นหาทางเลือกจริง',
       ];
 
   return lines.join('\n');
@@ -345,9 +443,12 @@ export default function DecisionAdvisorBot() {
   const pathname = usePathname();
   const english = language === 'en';
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<WizardStep>('sector');
+  const [phase, setPhase] = useState<FlowPhase>('scope');
+  const [step, setStep] = useState<WizardStep>('interest');
   const [scope, setScope] = useState<ScopeDraft>(EMPTY_SCOPE);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [criteria, setCriteria] = useState<CriterionTemplate[]>([]);
+  const [selectedCriteria, setSelectedCriteria] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -357,6 +458,7 @@ export default function DecisionAdvisorBot() {
   const subsectors = useMemo(() => selectedSectors.flatMap((item) => item.children), [selectedSectors]);
 
   const options: Option[] =
+    step === 'interest' ? INTERESTS :
     step === 'sector' ? SECTORS :
     step === 'subsector' ? subsectors :
     step === 'target' ? TARGETS :
@@ -366,6 +468,7 @@ export default function DecisionAdvisorBot() {
 
   const selected = scope[step];
   const canContinue =
+    step === 'interest' ? selected.length >= 1 :
     step === 'sector' ? selected.length >= 1 :
     step === 'subsector' ? selected.length >= 1 :
     selected.length >= 1;
@@ -373,14 +476,14 @@ export default function DecisionAdvisorBot() {
   useEffect(() => {
     if (!open) return;
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [open, messages, loading, error, step]);
+  }, [open, messages, loading, error, step, phase]);
 
   function toggle(optionId: string) {
     setScope((current) => {
       const values = current[step];
       const exists = values.includes(optionId);
 
-      if (step === 'sector' && !exists && values.length >= 2) return current;
+      if ((step === 'interest' || step === 'sector') && !exists && values.length >= 2) return current;
 
       const next = exists ? values.filter((item) => item !== optionId) : [...values, optionId];
       const updated = { ...current, [step]: next };
@@ -409,9 +512,26 @@ export default function DecisionAdvisorBot() {
   function resetWizard() {
     if (loading) return;
     setScope(EMPTY_SCOPE);
-    setStep('sector');
+    setStep('interest');
+    setPhase('scope');
+    setCriteria([]);
+    setSelectedCriteria([]);
     setError('');
     setMessages([]);
+  }
+
+  function prepareCriteria() {
+    const derived = criteriaForScope(scope);
+    setCriteria(derived);
+    setSelectedCriteria(derived.map((item) => item.id));
+    setPhase('criteria');
+    setError('');
+  }
+
+  function toggleCriterion(id: string) {
+    setSelectedCriteria((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
   }
 
   async function analyzeScope() {
@@ -424,7 +544,18 @@ export default function DecisionAdvisorBot() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          question: compiledScope(scope, english),
+          question: [
+            compiledScope(scope, english),
+            '',
+            english ? 'PRESELECTED CRITERIA — preserve these criteria unless a criterion is impossible to measure:' : 'CRITERIA ที่ผู้ใช้เลือกไว้แล้ว — ให้คง Criteria เหล่านี้ไว้ เว้นแต่ไม่สามารถวัดได้จริง:',
+            ...criteria.filter((item) => selectedCriteria.includes(item.id)).map((item, index) =>
+              `${index + 1}. ${english ? item.en : item.th} | unit=${english ? item.unitEn : item.unitTh} | direction=${item.direction} | rationale=${english ? item.reasonEn : item.reasonTh}`
+            ),
+            '',
+            english
+              ? 'NOW discover 3-5 realistic alternatives only after the criteria are fixed. For each alternative, collect comparable measurable values for the selected criteria. Source priority: official/government open data first (Thailand data.go.th / DGA, National Statistical Office, Department of Business Development, relevant ministries/provincial agencies), then official institutions, then credible research/industry sources. Prefer direct datasets/API/CSV/table values. Use a clearly defined ordinal scale only for criteria that cannot be measured directly. Do not invent additional criteria unless required to replace an impossible criterion.'
+              : 'จากนี้จึงค่อยค้นหา “ทางเลือก” 3–5 ทางเลือกที่เป็นไปได้ โดย Criteria ถูกกำหนดไว้ก่อนแล้ว สำหรับแต่ละทางเลือกให้รวบรวมค่าที่เปรียบเทียบกันได้ของ Criteria ที่เลือกไว้ ให้เรียงความน่าเชื่อถือของแหล่งข้อมูลเป็น: (1) ข้อมูลเปิด/หน่วยงานภาครัฐ เช่น data.go.th/DGA, สำนักงานสถิติแห่งชาติ (NSO), กรมพัฒนาธุรกิจการค้า (DBD), กระทรวง/จังหวัด/หน่วยงานรัฐที่เกี่ยวข้อง (2) สถาบันทางการ/มหาวิทยาลัย/งานวิจัย (3) แหล่งอุตสาหกรรมที่น่าเชื่อถือ ใช้ API/CSV/ตาราง/ข้อมูลตัวเลขโดยตรงก่อน หาก Criteria ใดไม่มี Tangible Data จึงใช้ Scale ที่นิยามช่วงคะแนนชัดเจน ห้ามเพิ่ม Criteria ใหม่เว้นแต่ต้องแทน Criterion ที่วัดไม่ได้จริง',
+          ].join('\n'),
           language,
           history: [],
         }),
@@ -436,6 +567,7 @@ export default function DecisionAdvisorBot() {
       }
 
       const result = data as AdvisorResponse;
+      setPhase('result');
       setMessages([
         {
           id: id(),
@@ -475,14 +607,14 @@ export default function DecisionAdvisorBot() {
             <div className={styles.brandMark}>✦</div>
             <div className={styles.headerText}>
               <strong>MCDA Advisor</strong>
-              <span>{english ? 'Scope → Tangible data → Entropy → 5 MCDA advisors' : 'Scope → Tangible Data → Entropy → MCDA 5 วิธี'}</span>
+              <span>{english ? 'Scope → Criteria → Alternatives & Data → Entropy → MCDA' : 'Scope → Criteria → Alternatives & Data → Entropy → MCDA'}</span>
             </div>
             <div className={styles.methodDots}><i /><i /><i /><i /><i /></div>
             <button type="button" className={styles.close} onClick={() => setOpen(false)} aria-label={english ? 'Close advisor' : 'ปิดที่ปรึกษา'}>×</button>
           </header>
 
           <div className={styles.body}>
-            {!messages.length ? (
+            {phase === 'scope' ? (
               <>
                 <div className={styles.scopeIntro}>
                   <span className={styles.welcomeIcon}>◇</span>
@@ -541,18 +673,92 @@ export default function DecisionAdvisorBot() {
                       {english ? 'Continue' : 'ถัดไป'}
                     </button>
                   ) : (
-                    <button type="button" className={styles.scopeAnalyze} onClick={() => void analyzeScope()} disabled={!canContinue || loading}>
-                      {loading ? (english ? 'Researching…' : 'กำลังค้นข้อมูล…') : (english ? 'Research & Analyze' : 'ค้นข้อมูลและวิเคราะห์')}
+                    <button type="button" className={styles.scopeAnalyze} onClick={prepareCriteria} disabled={!canContinue || loading}>
+                      {english ? 'Build Criteria Structure' : 'สร้าง Criteria Structure'}
                     </button>
                   )}
+                </div>
+
+              </>
+            ) : phase === 'criteria' ? (
+              <>
+                <div className={styles.phaseRail}>
+                  <span className={styles.phaseDone}>1</span><b>{english ? 'Scope' : 'Scope'}</b>
+                  <i />
+                  <span className={styles.phaseActive}>2</span><b>{english ? 'Criteria' : 'Criteria'}</b>
+                  <i />
+                  <span>3</span><b>{english ? 'Alternatives & Data' : 'ทางเลือก + Data'}</b>
+                  <i />
+                  <span>4</span><b>Entropy</b>
+                  <i />
+                  <span>5</span><b>MCDA</b>
+                </div>
+
+                <div className={styles.criteriaIntro}>
+                  <span>②</span>
+                  <div>
+                    <h2>{english ? 'Review the Criteria Structure' : 'ตรวจสอบ Criteria Structure ก่อนค้นหาทางเลือก'}</h2>
+                    <p>{english
+                      ? 'These factors were derived from the scope and business objectives you selected. Check or uncheck them before the system searches for alternatives and measurable data.'
+                      : 'Criteria ชุดนี้ถูกสร้างจาก Scope กลุ่มเป้าหมาย ความคาดหวัง และ Business Model ที่เลือกไว้ ให้ Check/Uncheck ปัจจัยก่อน ระบบจึงค่อยค้นหา “ทางเลือก” และ Tangible Data'}</p>
+                  </div>
+                </div>
+
+                <div className={styles.criteriaGroups}>
+                  {Object.entries(GROUP_LABELS).map(([groupKey, groupLabel]) => {
+                    const groupCriteria = criteria.filter((item) => item.group === groupKey);
+                    if (!groupCriteria.length) return null;
+                    return (
+                      <section key={groupKey} className={styles.criteriaGroup}>
+                        <header>
+                          <strong>{english ? groupLabel.en : groupLabel.th}</strong>
+                          <small>{groupCriteria.filter((item) => selectedCriteria.includes(item.id)).length}/{groupCriteria.length}</small>
+                        </header>
+                        <div>
+                          {groupCriteria.map((item) => {
+                            const checked = selectedCriteria.includes(item.id);
+                            return (
+                              <label key={item.id} className={`${styles.criterionChoice} ${checked ? styles.criterionChoiceActive : ''}`}>
+                                <input type="checkbox" checked={checked} onChange={() => toggleCriterion(item.id)} />
+                                <span className={styles.checkMark}>{checked ? '✓' : ''}</span>
+                                <span>
+                                  <strong>{english ? item.en : item.th}</strong>
+                                  <small>{english ? item.unitEn : item.unitTh} · {item.direction === 'benefit' ? (english ? 'higher is better' : 'สูงดีกว่า') : (english ? 'lower is better' : 'ต่ำดีกว่า')}</small>
+                                  <em>{english ? item.reasonEn : item.reasonTh}</em>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+
+                <div className={styles.sourcePriority}>
+                  <strong>{english ? 'Evidence source priority' : 'ลำดับแหล่งข้อมูลที่ระบบจะค้นก่อน'}</strong>
+                  <span>1. data.go.th / DGA</span>
+                  <span>2. NSO / catalog.nso.go.th / Statistics API</span>
+                  <span>3. DBD / DataWarehouse+ / Government agencies</span>
+                  <span>4. Official institutions / research</span>
+                  <span>5. Credible industry sources</span>
+                </div>
+
+                <div className={styles.scopeActions}>
+                  <button type="button" className={styles.scopeBack} onClick={() => setPhase('scope')} disabled={loading}>
+                    {english ? 'Back to Scope' : 'กลับไปแก้ Scope'}
+                  </button>
+                  <button type="button" className={styles.scopeAnalyze} onClick={() => void analyzeScope()} disabled={selectedCriteria.length < 3 || loading}>
+                    {loading ? (english ? 'Finding alternatives & data…' : 'กำลังค้นหาทางเลือกและข้อมูล…') : (english ? 'Find Alternatives & Analyze' : 'ค้นหาทางเลือก + Tangible Data')}
+                  </button>
                 </div>
 
                 {loading ? (
                   <div className={styles.thinking}>
                     <div className={styles.pulse}><i /><i /><i /></div>
                     <div>
-                      <strong>{english ? 'Collecting tangible evidence…' : 'กำลังรวบรวม Tangible / Measurable Data…'}</strong>
-                      <span>{english ? 'Evidence → Decision matrix → Entropy → TOPSIS / VIKOR / WASPAS / MOORA / PROMETHEE' : 'Evidence → Decision Matrix → Entropy → TOPSIS / VIKOR / WASPAS / MOORA / PROMETHEE'}</span>
+                      <strong>{english ? 'Searching trusted evidence and building the decision matrix…' : 'กำลังค้นข้อมูลจากแหล่งน่าเชื่อถือและสร้าง Decision Matrix…'}</strong>
+                      <span>{english ? 'Alternatives → measurable values → Entropy → 5 MCDA methods' : 'ทางเลือก → Measurable Data → Entropy Weight → MCDA 5 วิธี'}</span>
                     </div>
                   </div>
                 ) : null}
@@ -576,8 +782,8 @@ export default function DecisionAdvisorBot() {
 
           <footer className={styles.footer}>
             {english
-              ? 'Entropy weights are calculated from criterion dispersion; tangible evidence is preferred over proxy estimates.'
-              : 'Entropy Weight คำนวณจากการกระจายของข้อมูล Criteria และระบบจะให้ความสำคัญกับ Tangible Data ก่อนค่า proxy'}
+              ? 'Criteria are fixed before alternatives are discovered. Entropy weights are calculated only after measurable alternative data is collected.'
+              : 'กำหนด Criteria ก่อนค้นหาทางเลือก และคำนวณ Entropy Weight หลังรวบรวมค่าของแต่ละทางเลือกแล้วเท่านั้น'}
           </footer>
         </section>
       ) : null}
@@ -593,7 +799,7 @@ function AdvisorMessage({ result, english }: { result: AdvisorResponse; english:
   return (
     <article className={styles.assistantCard}>
       <div className={styles.answerTop}>
-        <span className={styles.answerLabel}>{english ? 'CONSENSUS' : 'คำแนะนำหลัก'}</span>
+        <span className={styles.answerLabel}>{english ? 'PHASE 5 · MCDA CONSENSUS' : 'PHASE 5 · ผล MCDA'}</span>
         <h3>{result.answer.headline}</h3>
         <p>{result.answer.summary}</p>
         {result.answer.estimateNote ? <div className={styles.estimateNote}>{result.answer.estimateNote}</div> : null}
@@ -631,7 +837,7 @@ function AdvisorMessage({ result, english }: { result: AdvisorResponse; english:
       </div>
 
       <details className={styles.details}>
-        <summary>{english ? 'View decision structure and Entropy weights' : 'ดู Data Structure และ Entropy Weight'}</summary>
+        <summary>{english ? 'View alternatives, measurable matrix, Entropy weights, and sources' : 'ดูทางเลือก · Measurable Data · Entropy Weight · แหล่งข้อมูล'}</summary>
         <div className={styles.detailBody}>
           <div className={styles.objective}>
             <span>{english ? 'Objective' : 'เป้าหมาย'}</span>
