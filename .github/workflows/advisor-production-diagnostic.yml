@@ -19,17 +19,19 @@ jobs:
             https://mcda-decision-analysis.micro-support.com/api/health
           echo
       - name: Advisor end-to-end smoke
-        continue-on-error: true
         run: |
           set -euxo pipefail
-          curl --fail-with-body --silent --show-error --max-time 120 \
-            https://mcda-decision-analysis.micro-support.com/api/health/advisor/smoke
+          status=$(curl --silent --show-error --max-time 120 \
+            -D /tmp/advisor-headers.txt \
+            -o /tmp/advisor-body.txt \
+            -w "%{http_code}" \
+            https://mcda-decision-analysis.micro-support.com/api/health/advisor/smoke)
+          echo "HTTP_STATUS=$status"
+          echo "--- HEADERS ---"
+          cat /tmp/advisor-headers.txt
+          echo "--- BODY ---"
+          cat /tmp/advisor-body.txt
           echo
-      - name: Advisor smoke direct service port
-        run: |
-          set -euxo pipefail
-          curl --fail-with-body --silent --show-error --max-time 120 \
-            http://183.88.220.157:3045/api/health/advisor/smoke
-          echo
+          test "$status" = "200"
 
 # rerun after remote-gate fix
