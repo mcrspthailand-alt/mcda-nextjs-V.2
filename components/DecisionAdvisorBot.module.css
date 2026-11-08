@@ -191,3 +191,116 @@
   border-radius:999px;padding:4px 7px;background:#f5f8fc;border:1px solid #e1e8f2;
 }
 .researchMeta b{color:#2563eb}
+
+
+.scopeIntro{
+  display:grid;grid-template-columns:42px minmax(0,1fr);gap:12px;align-items:start;
+  border:1px solid #cfddf2;border-radius:18px;padding:16px;
+  background:linear-gradient(145deg,#fff,#f3f8ff);
+  box-shadow:0 10px 24px rgba(34,74,145,.06);
+}
+.scopeIntro h2{margin:0 0 6px;font-size:17px;color:#173b6c}
+.scopeIntro p{margin:0;color:#64748b;font-size:11px;line-height:1.65}
+
+.scopeProgress{
+  display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;
+  margin:14px 0 12px;
+}
+.scopeProgress button{
+  position:relative;border:0;background:transparent;padding:0;cursor:default;
+}
+.scopeProgress button::after{
+  content:"";position:absolute;left:50%;right:-50%;top:50%;height:3px;
+  background:#e4eaf3;transform:translateY(-50%);z-index:0;
+}
+.scopeProgress button:last-child::after{display:none}
+.scopeProgress span{
+  position:relative;z-index:1;width:27px;height:27px;border-radius:50%;
+  display:grid;place-items:center;margin:auto;background:#edf1f6;color:#8491a4;
+  font-size:9px;font-weight:900;border:1px solid #dae3ee;
+}
+.scopeProgress .scopeStepDone span{
+  background:#eafbf5;color:#087956;border-color:#b9e4d3;cursor:pointer;
+}
+.scopeProgress .scopeStepDone::after{background:#9fd9c3}
+.scopeProgress .scopeStepActive span{
+  background:linear-gradient(135deg,#0ea5e9,#4f46e5);color:#fff;border-color:transparent;
+  box-shadow:0 6px 15px rgba(55,87,205,.22);cursor:pointer;
+}
+
+.scopeQuestion{margin:4px 0 11px}
+.scopeQuestion h3{margin:0;color:#173b6c;font-size:14px}
+.scopeQuestion p{margin:4px 0 0;color:#75849a;font-size:9.5px;line-height:1.5}
+
+.checkboxGrid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+}
+.checkCard{
+  position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;
+  align-items:start;border:1px solid #d8e3f1;border-radius:12px;padding:10px;
+  background:linear-gradient(145deg,#fff,#f9fbff);cursor:pointer;
+  transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;
+}
+.checkCard:hover{border-color:#9ab9e7;box-shadow:0 6px 16px rgba(38,78,150,.07);transform:translateY(-1px)}
+.checkCard input{position:absolute;opacity:0;pointer-events:none}
+.checkCardActive{
+  border-color:#6f9fe4;background:linear-gradient(145deg,#edf7ff,#f1efff);
+  box-shadow:0 7px 18px rgba(54,89,200,.10)
+}
+.checkMark{
+  width:22px;height:22px;border-radius:7px;display:grid;place-items:center;
+  border:1px solid #c8d5e7;background:#fff;color:#fff;font-size:11px;font-weight:950;
+}
+.checkCardActive .checkMark{
+  border-color:transparent;background:linear-gradient(135deg,#0ea5e9,#4f46e5);
+}
+.checkCopy{min-width:0}
+.checkCopy strong{display:block;color:#28476c;font-size:10.5px;line-height:1.35}
+.checkCopy small{display:block;margin-top:3px;color:#7a899d;font-size:8.5px;line-height:1.35}
+
+.scopeActions{
+  display:flex;justify-content:space-between;gap:8px;margin-top:13px;
+}
+.scopeActions button{
+  border-radius:11px;padding:9px 12px;font:inherit;font-size:10px;font-weight:850;cursor:pointer;
+}
+.scopeActions button:disabled{opacity:.38;cursor:not-allowed}
+.scopeBack{border:1px solid #d4dfec;background:#fff;color:#65768d}
+.scopeNext{border:0;background:linear-gradient(135deg,#0ea5e9,#4f46e5);color:#fff;min-width:92px}
+.scopeAnalyze{
+  border:0;background:linear-gradient(135deg,#0ea5e9,#4f46e5 58%,#0f9f6e);color:#fff;
+  min-width:145px;box-shadow:0 8px 20px rgba(45,82,206,.18)
+}
+.scopeRestart{text-align:center;padding:10px 0 2px}
+.scopeRestart button{
+  border:1px solid #cbdcf2;border-radius:999px;padding:8px 12px;background:#fff;color:#315f9f;
+  font:inherit;font-size:9.5px;font-weight:850;cursor:pointer
+}
+
+.entropyTableWrap{
+  overflow:auto;border:1px solid #dce6f3;border-radius:11px;background:#fff;
+}
+.entropyTable{
+  width:100%;border-collapse:collapse;min-width:620px;font-size:9px;
+}
+.entropyTable th,.entropyTable td{
+  padding:7px 8px;border-bottom:1px solid #edf1f6;border-right:1px solid #edf1f6;
+  text-align:right;white-space:nowrap;
+}
+.entropyTable th:last-child,.entropyTable td:last-child{border-right:0}
+.entropyTable tr:last-child td{border-bottom:0}
+.entropyTable th{
+  background:#f0f6ff;color:#476487;font-weight:850;position:sticky;top:0;
+}
+.entropyTable th:first-child,.entropyTable td:first-child{text-align:left;min-width:170px}
+.entropyTable td:first-child strong{display:block;color:#2f496b;font-size:9.5px}
+.entropyTable td:first-child small{display:block;color:#8491a3;margin-top:2px;font-size:8px}
+.entropyWeight{color:#1d4ed8;font-weight:950}
+.entropyDiversification{color:#0f9f6e;font-weight:850}
+.entropyValue{color:#6b5dd7;font-weight:800}
+
+@media(max-width:640px){
+  .checkboxGrid{grid-template-columns:1fr}
+  .scopeIntro{grid-template-columns:34px minmax(0,1fr);padding:13px}
+  .scopeActions{position:sticky;bottom:0;background:linear-gradient(180deg,rgba(255,255,255,0),#fff 28%);padding-top:16px}
+}
