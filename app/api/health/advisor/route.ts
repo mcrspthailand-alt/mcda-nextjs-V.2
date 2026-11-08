@@ -8,6 +8,7 @@ const DEFAULT_OLLAMA_MODEL = 'qwen3:4b';
 export async function GET() {
   const serviceUrl = process.env.MCDA_ADVISOR_SERVICE_URL?.replace(/\/+$/, '');
   const hasSecret = Boolean(process.env.MCDA_ADVISOR_SERVICE_SECRET);
+  const remoteEnabled = process.env.MCDA_ADVISOR_REMOTE_ENABLED !== 'false';
 
   let remoteHealth = false;
   let remoteStatus: number | null = null;
@@ -66,8 +67,8 @@ export async function GET() {
 
   return NextResponse.json(
     {
-      configured: Boolean((serviceUrl && hasSecret) || localHealth),
-      primary: serviceUrl && hasSecret ? 'remote-with-local-fallback' : 'local',
+      configured: Boolean((remoteEnabled && serviceUrl && hasSecret) || localHealth),
+      primary: remoteEnabled && serviceUrl && hasSecret ? 'remote-with-local-fallback' : 'local',
       retrieval: {
         level1: 'fetch + Cheerio',
         level2: 'Crawlee + PlaywrightCrawler',
@@ -75,7 +76,8 @@ export async function GET() {
         browserCrawlerStatus,
       },
       remote: {
-        configured: Boolean(serviceUrl && hasSecret),
+        configured: Boolean(remoteEnabled && serviceUrl && hasSecret),
+        enabled: remoteEnabled,
         health: remoteHealth,
         status: remoteStatus,
       },
