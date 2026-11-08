@@ -683,6 +683,40 @@ function AdvisorMessage({ result, english }: { result: AdvisorResponse; english:
             ))}
           </div>
 
+          <div className={styles.entropyTableWrap}>
+            <table className={styles.entropyTable}>
+              <thead>
+                <tr>
+                  <th>{english ? 'Criterion' : 'เกณฑ์'}</th>
+                  {result.structure.alternatives.map((alternative, index) => (
+                    <th key={alternative.id}>A{index + 1}</th>
+                  ))}
+                  <th>E<sub>j</sub></th>
+                  <th>d<sub>j</sub></th>
+                  <th>w<sub>j</sub></th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.structure.criteria.map((criterion, index) => (
+                  <tr key={criterion.id}>
+                    <td>
+                      <strong>{criterion.name}</strong>
+                      <small>{criterion.unit} · {criterion.direction === 'benefit'
+                        ? (english ? 'benefit' : 'ผลได้')
+                        : (english ? 'cost' : 'ต้นทุน')}</small>
+                    </td>
+                    {criterion.values.map((value, valueIndex) => (
+                      <td key={`${criterion.id}-${valueIndex}`}>{Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                    ))}
+                    <td className={styles.entropyValue}>{(result.analysis.entropy[index] ?? 0).toFixed(4)}</td>
+                    <td className={styles.entropyDiversification}>{(result.analysis.diversification[index] ?? 0).toFixed(4)}</td>
+                    <td className={styles.entropyWeight}>{pct(result.analysis.weights[index] ?? 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
           <div className={styles.consensusTable}>
             <div className={styles.tableHead}>
               <span>{english ? 'Alternative' : 'ทางเลือก'}</span>
