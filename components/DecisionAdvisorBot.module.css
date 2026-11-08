@@ -376,3 +376,7 @@
   .criteriaIntro{grid-template-columns:32px minmax(0,1fr);padding:12px}
   .criteriaIntro>span{width:32px;height:32px;border-radius:10px}
 }
+
+.sources a{display:grid;gap:2px}
+.sources a span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sources a small{font-size:7.8px;color:#6f7f94;font-weight:800}
