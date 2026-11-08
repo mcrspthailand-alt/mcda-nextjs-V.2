@@ -214,6 +214,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const diagnostics: string[] = [];
     let generated:
       | {
           structure: AdvisorStructure;
@@ -227,6 +228,7 @@ export async function POST(request: NextRequest) {
       generated = await buildStructureRemote(body);
     } catch (error) {
       remoteError = error;
+      diagnostics.push('REMOTE_FAILED');
       console.warn('Remote MCDA Advisor unavailable; falling back to local Qwen3', error);
     }
 
@@ -243,11 +245,17 @@ export async function POST(request: NextRequest) {
           },
         };
       } catch (localError) {
+        diagnostics.push('LOCAL_FAILED');
         console.warn('Local Qwen3 advisor unavailable; checking direct AI Gateway fallback', localError);
         generated = await buildStructureLocal(body);
 
         if (!generated) {
-          throw remoteError ?? localError;
+          diagnostics.push('AI_GATEWAY_UNCONFIGURED');
+          const fallbackError = remoteError ?? localError;
+          if (fallbackError instanceof Error) {
+            Object.assign(fallbackError, { advisorDiagnostics: diagnostics });
+          }
+          throw fallbackError;
         }
       }
     }
@@ -282,9 +290,14 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error('MCDA advisor failed', error);
+    const diagnosticCode =
+      Array.isArray((error as { advisorDiagnostics?: unknown })?.advisorDiagnostics)
+        ? ((error as { advisorDiagnostics: string[] }).advisorDiagnostics.join('+'))
+        : 'ADVISOR_PIPELINE_FAILED';
     return NextResponse.json(
       {
         error: 'ADVISOR_FAILED',
+        diagnosticCode,
         message:
           body.language === 'en'
             ? 'The MCDA Advisor could not complete this request. Please try again.'
