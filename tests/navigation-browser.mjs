@@ -19,6 +19,83 @@ const entitlements = {
   dailyLimit: 10, usedToday: 0, remainingToday: 10, usageDate: '2026-10-05', weeklyPriceThb: '59',
 };
 
+const alternatives = [
+  { id: 'A1', name: 'คาเฟ่ขนาดเล็ก', description: 'ร้านกาแฟและเครื่องดื่มสำหรับคนทำงานและนักศึกษา' },
+  { id: 'A2', name: 'ร้านอาหารบริการด่วน', description: 'ร้านอาหารเมนูสั้น เน้นรอบหมุนเร็ว' },
+  { id: 'A3', name: 'Cloud Kitchen', description: 'ครัวเดลิเวอรีเน้นต้นทุนหน้าร้านต่ำ' },
+];
+const criteria = [
+  { id: 'market_size', name: 'ขนาดตลาดเป้าหมาย', group: 'market', unit: 'คน', direction: 'benefit', values: [8000, 10000, 12000], basis: 'web_data', confidence: .9, measurementNote: 'Official market estimate' },
+  { id: 'startup_cost', name: 'เงินลงทุนเริ่มต้น', group: 'financial', unit: 'บาท', direction: 'cost', values: [250000, 350000, 180000], basis: 'model_estimate', confidence: .5, measurementNote: 'Proxy based on equipment and fit-out' },
+  { id: 'break_even', name: 'ระยะเวลาคืนทุน', group: 'financial', unit: 'เดือน', direction: 'cost', values: [14, 12, 9], basis: 'model_estimate', confidence: .5, measurementNote: 'Proxy break-even estimate' },
+  { id: 'competitor_count', name: 'จำนวนคู่แข่งโดยตรง', group: 'risk', unit: 'ราย', direction: 'cost', values: [18, 12, 8], basis: 'web_data', confidence: .8, measurementNote: 'Business listing count' },
+  { id: 'market_growth', name: 'อัตราการเติบโตตลาด', group: 'market', unit: '% ต่อปี', direction: 'benefit', values: [6, 5, 9], basis: 'web_data', confidence: .8, measurementNote: 'Market growth evidence' },
+];
+const methodNames = ['TOPSIS','VIKOR','WASPAS','MOORA','PROMETHEE'];
+const ranking = [
+  { alternativeIndex: 2, alternativeName: 'Cloud Kitchen', rank: 1, score: .95 },
+  { alternativeIndex: 1, alternativeName: 'ร้านอาหารบริการด่วน', rank: 2, score: .72 },
+  { alternativeIndex: 0, alternativeName: 'คาเฟ่ขนาดเล็ก', rank: 3, score: .55 },
+];
+const advisorFixture = {
+  answer: {
+    headline: 'คำแนะนำ: Cloud Kitchen',
+    summary: 'Cloud Kitchen มีฉันทามติโดยรวมดีที่สุดจากที่ปรึกษา MCDA ทั้ง 5 วิธี',
+    estimateNote: 'ตัวเลขบางส่วนเป็นค่า proxy ที่ระบุไว้ชัดเจน',
+  },
+  structure: {
+    objective: 'เลือกธุรกิจอาหารที่เหมาะกับงบและคืนทุนได้เร็ว',
+    contextSummary: 'Scope ตัวอย่างสำหรับ browser test',
+    alternatives,
+    groups: [
+      { name: 'ตลาดและลูกค้า', description: 'Market factors', criteriaIds: ['market_size','market_growth'] },
+      { name: 'การเงินและความคุ้มค่า', description: 'Financial factors', criteriaIds: ['startup_cost','break_even'] },
+      { name: 'การแข่งขันและความเสี่ยง', description: 'Risk factors', criteriaIds: ['competitor_count'] },
+    ],
+    criteria,
+    caveats: ['Browser fixture only'],
+  },
+  analysis: {
+    weights: [.24,.22,.2,.18,.16],
+    entropy: [.71,.74,.76,.78,.8],
+    diversification: [.29,.26,.24,.22,.2],
+    advisors: methodNames.map(method => ({
+      method,
+      winnerIndex: 2,
+      winnerName: 'Cloud Kitchen',
+      winnerScore: .95,
+      ranks: ranking,
+    })),
+    consensus: [
+      { alternativeIndex: 2, alternativeName: 'Cloud Kitchen', rank: 1, averageRank: 1, topVotes: 5, averageScore: .95 },
+      { alternativeIndex: 1, alternativeName: 'ร้านอาหารบริการด่วน', rank: 2, averageRank: 2, topVotes: 0, averageScore: .72 },
+      { alternativeIndex: 0, alternativeName: 'คาเฟ่ขนาดเล็ก', rank: 3, averageRank: 3, topVotes: 0, averageScore: .55 },
+    ],
+    winnerIndex: 2,
+    winnerName: 'Cloud Kitchen',
+    topFactors: [
+      { criterionId: 'market_size', criterionName: 'ขนาดตลาดเป้าหมาย', group: 'market', weight: .24, unit: 'คน', direction: 'benefit', basis: 'web_data' },
+      { criterionId: 'startup_cost', criterionName: 'เงินลงทุนเริ่มต้น', group: 'financial', weight: .22, unit: 'บาท', direction: 'cost', basis: 'model_estimate' },
+      { criterionId: 'break_even', criterionName: 'ระยะเวลาคืนทุน', group: 'financial', weight: .2, unit: 'เดือน', direction: 'cost', basis: 'model_estimate' },
+      { criterionId: 'competitor_count', criterionName: 'จำนวนคู่แข่งโดยตรง', group: 'risk', weight: .18, unit: 'ราย', direction: 'cost', basis: 'web_data' },
+    ],
+    agreement: 1,
+    hasEstimatedData: true,
+  },
+  methodExplanations: null,
+  sources: [
+    { id: 's1', url: 'https://data.go.th/example', title: 'Open Government Data' },
+    { id: 's2', url: 'https://www.nso.go.th/example', title: 'National Statistical Office' },
+  ],
+  meta: {
+    advisors: methodNames,
+    calculationMode: 'deterministic-server',
+    research: true,
+    scraper: 'browser fixture',
+    model: 'fixture',
+  },
+};
+
 // Execute the real API preparation code: integrity check, membership patch and
 // lifecycle wrapper. Mock only authentication; use the actual compressed engine.
 const require = createRequire(import.meta.url);
@@ -67,6 +144,7 @@ await context.route('**/*', async route => {
     redemptions: [],
   };
   else if (url.pathname === '/api/analysis/authorize') body = { ok: true, entitlements };
+  else if (url.pathname === '/api/advisor') body = advisorFixture;
   else if (url.pathname === '/api/analytics') body = { ok: true };
   else if (url.pathname === '/api/billing/orders') body = {
     entitlements, order: null, qrDataUrl: null, paymentConfigured: false,
@@ -146,6 +224,36 @@ try {
   await page.evaluate(() => history.replaceState(history.state, '', '/#sample'));
   await selected('sample');
   await page.screenshot({ path: 'test-results/navigation/sample-mobile.png', fullPage: false });
+
+  // MCDA Advisor infographic poster generation regression.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseURL}/#home`);
+  await page.getByRole('button', { name: /MCDA Advisor/ }).click();
+  await page.getByRole('checkbox', { name: /เริ่มธุรกิจใหม่/ }).check();
+  await page.getByRole('button', { name: 'ถัดไป' }).click();
+  await page.getByRole('checkbox', { name: /อาหารและเครื่องดื่ม/ }).check();
+  await page.getByRole('button', { name: 'ถัดไป' }).click();
+  await page.getByRole('checkbox', { name: /ร้านอาหาร \/ คาเฟ่/ }).check();
+  await page.getByRole('button', { name: 'ถัดไป' }).click();
+  await page.getByRole('checkbox', { name: /ผู้บริโภคทั่วไป/ }).check();
+  await page.getByRole('button', { name: 'ถัดไป' }).click();
+  await page.getByRole('checkbox', { name: /กำไรสูงสุด/ }).check();
+  await page.getByRole('button', { name: 'ถัดไป' }).click();
+  await page.getByRole('checkbox', { name: /หน้าร้าน/ }).check();
+  await page.getByRole('button', { name: 'ถัดไป' }).click();
+  await page.getByRole('checkbox', { name: /ระดับจังหวัด/ }).check();
+  await page.getByRole('button', { name: 'สร้าง Criteria Structure' }).click();
+  await page.getByRole('button', { name: /ค้นหาทางเลือก/ }).click();
+
+  await page.getByText('INFOGRAPHIC สรุปผลอัตโนมัติ').waitFor({ timeout: 10000 });
+  const posterImage = page.getByRole('img', { name: 'อินโฟกราฟิกสรุปผลการวิเคราะห์ MCDA' });
+  await posterImage.waitFor({ timeout: 20000 });
+  assert.ok((await posterImage.getAttribute('src'))?.startsWith('data:image/png;base64,'));
+  const download = page.getByRole('link', { name: 'ดาวน์โหลด PNG' });
+  assert.ok((await download.getAttribute('href'))?.startsWith('data:image/png;base64,'));
+  await page.screenshot({ path: 'test-results/navigation/advisor-infographic.png', fullPage: false });
+  console.log('Infographic poster generation regression passed: Scope -> Criteria -> Analysis -> PNG preview/download.');
+
   assert.deepEqual(errors, [], 'no uncaught browser errors');
   console.log('Navigation browser regression passed: direct hashes, repeated Next Link returns, Back/Forward, state preservation, desktop/mobile.');
 } catch (error) {
