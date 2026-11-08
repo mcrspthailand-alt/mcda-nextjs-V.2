@@ -18,3 +18,5 @@ jobs:
           curl --fail-with-body --silent --show-error --max-time 30 \
             https://mcda-decision-analysis.micro-support.com/api/health
           echo
+
+# rerun after remote-gate fix
