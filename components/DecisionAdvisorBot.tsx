@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useLanguage } from '@/components/LanguageProvider';
 import type { AdvisorAnalysis, AdvisorStructure, MethodName } from '@/lib/advisor/mcda';
+import AdvisorInfographicPoster, { type AdvisorPosterScope } from '@/components/AdvisorInfographicPoster';
 import styles from './DecisionAdvisorBot.module.css';
 
 type AdvisorResponse = {
@@ -424,6 +425,27 @@ function wizardHint(step: WizardStep, english: boolean) {
   return english ? en[step] : th[step];
 }
 
+function buildPosterScope(scope: ScopeDraft, english: boolean): AdvisorPosterScope {
+  const selectedSectors = SECTORS.filter((item) => scope.sector.includes(item.id));
+  const childOptions = selectedSectors.flatMap((item) => item.children);
+  const names = (ids: string[], options: Option[]) =>
+    ids
+      .map((item) => options.find((option) => option.id === item))
+      .filter(Boolean)
+      .map((option) => label(option!, english))
+      .join(' · ');
+
+  return {
+    interest: names(scope.interest, INTERESTS),
+    sector: names(scope.sector, SECTORS),
+    subsector: names(scope.subsector, childOptions),
+    target: names(scope.target, TARGETS),
+    expectation: names(scope.expectation, EXPECTATIONS),
+    model: names(scope.model, MODELS),
+    constraints: names(scope.constraints, CONSTRAINTS),
+  };
+}
+
 function compiledScope(scope: ScopeDraft, english: boolean) {
   const selectedSectors = SECTORS.filter((item) => scope.sector.includes(item.id));
   const childOptions = selectedSectors.flatMap((item) => item.children);
@@ -792,7 +814,7 @@ export default function DecisionAdvisorBot() {
             ) : (
               <>
                 {messages.map((message) => message.result ? (
-                  <AdvisorMessage key={message.id} result={message.result} english={english} />
+                  <AdvisorMessage key={message.id} result={message.result} english={english} scope={buildPosterScope(scope, english)} />
                 ) : null)}
                 <div className={styles.scopeRestart}>
                   <button type="button" onClick={resetWizard}>
@@ -817,7 +839,7 @@ export default function DecisionAdvisorBot() {
   );
 }
 
-function AdvisorMessage({ result, english }: { result: AdvisorResponse; english: boolean }) {
+function AdvisorMessage({ result, english, scope }: { result: AdvisorResponse; english: boolean; scope: AdvisorPosterScope }) {
   const weightsById = new Map(
     result.structure.criteria.map((criterion, index) => [criterion.id, result.analysis.weights[index] ?? 0]),
   );
@@ -995,6 +1017,12 @@ function AdvisorMessage({ result, english }: { result: AdvisorResponse; english:
           ) : null}
         </div>
       </details>
+
+      <AdvisorInfographicPoster
+        result={result}
+        scope={scope}
+        english={english}
+      />
     </article>
   );
 }
