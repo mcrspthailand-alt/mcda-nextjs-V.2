@@ -1,0 +1,20 @@
+name: Advisor Production Diagnostic
+on:
+  push:
+    branches: [diag/advisor-health-20261108]
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Advisor health
+        run: |
+          set -euxo pipefail
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            https://mcda-decision-analysis.micro-support.com/api/health/advisor
+          echo
+      - name: Main health
+        run: |
+          set -euxo pipefail
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            https://mcda-decision-analysis.micro-support.com/api/health
+          echo
