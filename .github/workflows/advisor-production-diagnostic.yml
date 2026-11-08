@@ -12,6 +12,22 @@ jobs:
           curl --fail-with-body --silent --show-error --max-time 30 \
             https://mcda-decision-analysis.micro-support.com/api/health/advisor
           echo
+      - name: Advisor smoke pipeline
+        run: |
+          set -euxo pipefail
+          curl --fail-with-body --silent --show-error --max-time 120 \
+            https://mcda-decision-analysis.micro-support.com/api/health/advisor/smoke \
+            -o advisor-smoke.json
+          cat advisor-smoke.json
+          echo
+          node - <<'NODE'
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync('advisor-smoke.json','utf8'));
+          if(x.ok!==true) throw new Error('smoke not ok: '+JSON.stringify(x));
+          if(Math.abs((x.entropy?.weightsSum ?? 0)-1)>1e-6) throw new Error('entropy sum invalid');
+          if(!Array.isArray(x.mcda?.advisors)||x.mcda.advisors.length!==5) throw new Error('expected five MCDA advisors');
+          console.log('SMOKE_ASSERTIONS=PASS');
+          NODE
       - name: Main health
         run: |
           set -euxo pipefail
