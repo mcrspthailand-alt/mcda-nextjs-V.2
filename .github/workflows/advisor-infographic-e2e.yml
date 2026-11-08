@@ -1,0 +1,42 @@
+name: Advisor Infographic E2E
+
+on:
+  push:
+    branches: [diag/advisor-infographic-e2e]
+
+jobs:
+  infographic:
+    runs-on: ubuntu-latest
+    env:
+      AUTH_SECRET: ci-only-placeholder-secret-not-for-production
+      AMS_SERVICE_CODE: mcda-ci-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm install
+      - run: npm run build
+      - name: Start disposable app
+        run: |
+          npm start > /tmp/mcda-next.log 2>&1 &
+          echo $! > /tmp/mcda-next.pid
+          for i in {1..45}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/mcda-next.log
+          exit 1
+      - name: Install Chromium test runtime
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.1
+          npx playwright install --with-deps chromium
+      - name: Run navigation + infographic browser regression
+        run: node --experimental-strip-types tests/navigation-browser.mjs
+      - name: Upload infographic screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: advisor-infographic-e2e
+          path: test-results/navigation
+          if-no-files-found: error
