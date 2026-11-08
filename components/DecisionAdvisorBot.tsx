@@ -358,6 +358,24 @@ function pct(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function sourceAffiliation(url: string) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.endsWith('data.go.th')) return 'DGA · Open Government Data';
+    if (host.endsWith('nso.go.th')) return 'NSO · National Statistical Office';
+    if (host.endsWith('dbd.go.th')) return 'DBD · Department of Business Development';
+    if (host.endsWith('bot.or.th')) return 'BOT · Bank of Thailand';
+    if (host.endsWith('nesdc.go.th')) return 'NESDC';
+    if (host.endsWith('sme.go.th')) return 'OSMEP';
+    if (host.endsWith('tat.or.th')) return 'TAT';
+    if (host.endsWith('.go.th')) return 'Thai Government Agency';
+    if (host.endsWith('.ac.th')) return 'Academic Institution';
+    return host.replace(/^www\./, '');
+  } catch {
+    return 'External source';
+  }
+}
+
 function label(option: Option, english: boolean) {
   return english ? option.en : option.th;
 }
@@ -952,7 +970,8 @@ function AdvisorMessage({ result, english }: { result: AdvisorResponse; english:
               <div>
                 {result.sources.slice(0, 10).map((source) => (
                   <a key={source.id} href={source.url} target="_blank" rel="noreferrer">
-                    {source.title}
+                    <span>{source.title}</span>
+                    <small>{sourceAffiliation(source.url)}</small>
                   </a>
                 ))}
               </div>
