@@ -25,6 +25,14 @@ const requestSchema = z.object({
     )
     .max(10)
     .default([]),
+  criteria: z.array(z.object({
+    id: z.string().min(1).max(50),
+    name: z.string().min(1).max(180),
+    group: z.string().min(1).max(80),
+    unit: z.string().min(1).max(100),
+    direction: z.enum(['benefit', 'cost']),
+    reason: z.string().min(1).max(600),
+  })).min(3).max(10).optional(),
 });
 
 const decisionStructureSchema = z.object({
@@ -144,9 +152,14 @@ ${historyText(body.history)}
 TASK
 Convert the question into a decision-ready hierarchical data structure. A deterministic server engine will calculate Entropy Weight Method and five MCDA methods after your output. You MUST NOT calculate weights or rankings yourself.
 
+LOCKED CRITERIA FROM USER REVIEW
+${body.criteria?.map((item, index) => `${index + 1}. ${item.name} | group=${item.group} | unit=${item.unit} | direction=${item.direction} | reason=${item.reason}`).join("\n") || "No locked criteria provided."}
+
+If locked criteria are provided, preserve them as the decision criteria. Your job is to discover alternatives and measurable values for those criteria, not to replace the criteria.
+
 RULES
-1. Preserve alternatives explicitly named by the user. If alternatives are not stated, propose 3-5 realistic and materially different alternatives.
-2. Build 2-5 factor groups and 4-10 measurable criteria.
+1. Preserve alternatives explicitly named by the user. If alternatives are not stated, discover 3-5 realistic and materially different alternatives only after the criteria are fixed.
+2. When locked criteria are provided, use those criteria and their direction/unit. Do not silently replace them. If one is impossible to measure, keep it as a transparent scale criterion and document the scale in measurementNote. Only build new criteria when no locked criteria were provided.
 3. Prefer tangible observed variables first: price, cost, distance, travel time, customer volume, population, income, market size, growth rate, competitor count, ratings, utilization, occupancy, service coverage, conversion, repeat purchase, margin, or other operational metrics.
 4. Convert vague concepts into proxy scores only when no defensible measurable variable can be retrieved.
 5. direction="benefit" means higher is better; direction="cost" means lower is better.
