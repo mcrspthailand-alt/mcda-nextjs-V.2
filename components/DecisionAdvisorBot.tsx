@@ -558,6 +558,14 @@ export default function DecisionAdvisorBot() {
           ].join('\n'),
           language,
           history: [],
+          criteria: criteria.filter((item) => selectedCriteria.includes(item.id)).map((item) => ({
+            id: item.id,
+            name: english ? item.en : item.th,
+            group: item.group,
+            unit: english ? item.unitEn : item.unitTh,
+            direction: item.direction,
+            reason: english ? item.reasonEn : item.reasonTh,
+          })),
         }),
       });
       const data = await response.json();
