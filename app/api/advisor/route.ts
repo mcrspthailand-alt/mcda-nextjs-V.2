@@ -89,7 +89,9 @@ function historyText(history: Array<{ role: 'user' | 'assistant'; content: strin
 }
 
 async function buildStructureRemote(body: z.infer<typeof requestSchema>) {
-  if (process.env.MCDA_ADVISOR_REMOTE_ENABLED !== 'true') return null;
+  // A configured remote service is enabled by default. Set MCDA_ADVISOR_REMOTE_ENABLED=false
+  // only when operators explicitly want to bypass it.
+  if (process.env.MCDA_ADVISOR_REMOTE_ENABLED === 'false') return null;
 
   const baseUrl = process.env.MCDA_ADVISOR_SERVICE_URL?.replace(/\/$/, '');
   const secret = process.env.MCDA_ADVISOR_SERVICE_SECRET;
