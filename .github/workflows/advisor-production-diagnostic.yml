@@ -35,3 +35,5 @@ jobs:
           test "$status" = "200"
 
 # rerun after remote-gate fix
+
+# rerun after secret sync and free-model parser production deploy
