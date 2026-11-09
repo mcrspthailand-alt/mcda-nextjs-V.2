@@ -145,6 +145,12 @@ await context.route('**/*', async route => {
   };
   else if (url.pathname === '/api/analysis/authorize') body = { ok: true, entitlements };
   else if (url.pathname === '/api/advisor') body = advisorFixture;
+  else if (url.pathname === '/api/advisor/image') body = {
+    image: 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#173b6c"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><rect width="1080" height="1350" fill="url(#g)"/><circle cx="540" cy="600" r="280" fill="#f59e0b" opacity=".85"/></svg>').toString('base64'),
+    mimeType: 'image/svg+xml',
+    model: 'fixture-image-model',
+    prompt: 'สร้าง รูป Infographic + One page + นำเสนอ + โฆษณา + ดึงดูด + สีสัน + fixture',
+  };
   else if (url.pathname === '/api/analytics') body = { ok: true };
   else if (url.pathname === '/api/billing/orders') body = {
     entitlements, order: null, qrDataUrl: null, paymentConfigured: false,
@@ -245,14 +251,14 @@ try {
   await page.getByRole('button', { name: 'สร้าง Criteria Structure' }).click();
   await page.getByRole('button', { name: /ค้นหาทางเลือก/ }).click();
 
-  await page.getByText('PROMO POSTER สรุปผลอัตโนมัติ').waitFor({ timeout: 10000 });
-  const posterImage = page.getByRole('img', { name: 'โปสเตอร์ประชาสัมพันธ์สรุปผล MCDA' });
+  await page.getByText('AI INFOGRAPHIC + ONE PAGE สรุปผลอัตโนมัติ').waitFor({ timeout: 10000 });
+  const posterImage = page.getByRole('img', { name: 'อินโฟกราฟิก AI สรุปผล MCDA' });
   await posterImage.waitFor({ timeout: 20000 });
   assert.ok((await posterImage.getAttribute('src'))?.startsWith('data:image/png;base64,'));
   const download = page.getByRole('link', { name: 'ดาวน์โหลด PNG' });
   assert.ok((await download.getAttribute('href'))?.startsWith('data:image/png;base64,'));
   await page.screenshot({ path: 'test-results/navigation/advisor-infographic.png', fullPage: false });
-  console.log('Promo poster generation regression passed: Scope -> Criteria -> Analysis -> PNG preview/download.');
+  console.log('AI infographic regression passed: Scope -> Criteria -> Analysis -> AI visual -> crisp overlay -> PNG preview/download.');
 
   assert.deepEqual(errors, [], 'no uncaught browser errors');
   console.log('Navigation browser regression passed: direct hashes, repeated Next Link returns, Back/Forward, state preservation, desktop/mobile.');
