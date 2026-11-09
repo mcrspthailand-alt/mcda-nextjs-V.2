@@ -142,11 +142,11 @@ function historyText(history: Array<{ role: 'user' | 'assistant'; content: strin
   return history.map((message) => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.content}`).join('\n');
 }
 
-function parseDecisionStructure(text: string) {
+function parseDecisionStructure(text: string, fallbackQuestion: string) {
   const trimmed = text.trim();
   const unfenced = trimmed
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/, '')
+    .replace(/^\`\`\`(?:json)?\s*/i, '')
+    .replace(/\s*\`\`\`$/, '')
     .trim();
 
   const firstBrace = unfenced.indexOf('{');
@@ -155,8 +155,83 @@ function parseDecisionStructure(text: string) {
     throw new Error('The advisor model did not return a JSON decision structure.');
   }
 
-  const parsed = JSON.parse(unfenced.slice(firstBrace, lastBrace + 1));
-  return decisionStructureSchema.parse(parsed);
+  const raw = JSON.parse(unfenced.slice(firstBrace, lastBrace + 1)) as Record<string, unknown>;
+
+  const alternatives = (Array.isArray(raw.alternatives) ? raw.alternatives : []).map((item, index) => {
+    const value = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    return {
+      id: typeof value.id === 'string' && value.id.trim() ? value.id.trim() : `A${index + 1}`,
+      name: typeof value.name === 'string' && value.name.trim() ? value.name.trim() : `Alternative ${index + 1}`,
+      description: typeof value.description === 'string' ? value.description : '',
+    };
+  });
+
+  const criteria = (Array.isArray(raw.criteria) ? raw.criteria : []).map((item, index) => {
+    const value = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    const basis = value.basis === 'user_data' || value.basis === 'web_data' ? value.basis : 'model_estimate';
+    const confidenceRaw = typeof value.confidence === 'number' && Number.isFinite(value.confidence)
+      ? value.confidence
+      : 0.5;
+    const values = Array.isArray(value.values)
+      ? value.values.map((entry) => Number(entry)).filter((entry) => Number.isFinite(entry) && entry >= 0)
+      : [];
+
+    return {
+      id: typeof value.id === 'string' && value.id.trim() ? value.id.trim() : `c${index + 1}`,
+      name: typeof value.name === 'string' && value.name.trim() ? value.name.trim() : `Criterion ${index + 1}`,
+      group: typeof value.group === 'string' && value.group.trim() ? value.group.trim() : 'General',
+      unit: typeof value.unit === 'string' && value.unit.trim() ? value.unit.trim() : 'score',
+      direction: value.direction === 'cost' ? 'cost' : 'benefit',
+      values,
+      basis,
+      confidence: Math.min(1, Math.max(0, confidenceRaw)),
+      measurementNote: typeof value.measurementNote === 'string' && value.measurementNote.trim()
+        ? value.measurementNote.trim()
+        : basis === 'model_estimate'
+          ? 'Model-derived proxy value; replace with observed data when available.'
+          : 'Evidence-backed measurement used for comparison.',
+    };
+  });
+
+  let groups = (Array.isArray(raw.groups) ? raw.groups : []).map((item, index) => {
+    const value = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : `Group ${index + 1}`;
+    const explicitIds = Array.isArray(value.criteriaIds)
+      ? value.criteriaIds.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+    const inferredIds = criteria.filter((criterion) => criterion.group === name).map((criterion) => criterion.id);
+
+    return {
+      name,
+      description: typeof value.description === 'string' ? value.description : '',
+      criteriaIds: explicitIds.length ? explicitIds : inferredIds,
+    };
+  });
+
+  if (!groups.length && criteria.length) {
+    groups = Array.from(new Set(criteria.map((criterion) => criterion.group))).map((name) => ({
+      name,
+      description: '',
+      criteriaIds: criteria.filter((criterion) => criterion.group === name).map((criterion) => criterion.id),
+    }));
+  }
+
+  const normalized = {
+    objective: typeof raw.objective === 'string' && raw.objective.trim()
+      ? raw.objective.trim()
+      : fallbackQuestion.slice(0, 500),
+    contextSummary: typeof raw.contextSummary === 'string' && raw.contextSummary.trim()
+      ? raw.contextSummary.trim()
+      : fallbackQuestion.slice(0, 1500),
+    alternatives,
+    groups,
+    criteria,
+    caveats: Array.isArray(raw.caveats)
+      ? raw.caveats.filter((entry): entry is string => typeof entry === 'string').slice(0, 8)
+      : [],
+  };
+
+  return decisionStructureSchema.parse(normalized);
 }
 
 export async function POST(request: NextRequest) {
