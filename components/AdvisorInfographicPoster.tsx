@@ -31,45 +31,25 @@ export type AdvisorPosterResult = {
 };
 
 function pct(value: number) {
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function shortNumber(value: number) {
-  if (!Number.isFinite(value)) return '—';
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  return Number(value.toFixed(2)).toLocaleString();
+  return `${(value * 100).toFixed(0)}%`;
 }
 
 function affiliation(url: string) {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    if (host.endsWith('data.go.th')) return 'DGA · data.go.th';
+    if (host.endsWith('data.go.th')) return 'DGA';
     if (host.endsWith('nso.go.th')) return 'NSO';
     if (host.endsWith('dbd.go.th')) return 'DBD';
     if (host.endsWith('bot.or.th')) return 'BOT';
     if (host.endsWith('nesdc.go.th')) return 'NESDC';
     if (host.endsWith('sme.go.th')) return 'OSMEP';
     if (host.endsWith('tat.or.th')) return 'TAT';
-    if (host.endsWith('.go.th')) return 'Thai Government';
-    if (host.endsWith('.ac.th')) return 'Academic';
-    return host.replace(/^www\./, '');
+    if (host.endsWith('.go.th')) return 'GOV';
+    if (host.endsWith('.ac.th')) return 'ACADEMIC';
+    return host.replace(/^www\./, '').split('.')[0]?.toUpperCase() || 'SOURCE';
   } catch {
-    return 'External';
+    return 'SOURCE';
   }
-}
-
-function iconForGroup(group: string) {
-  const normalized = group.toLowerCase();
-  if (normalized.includes('market')) return '👥';
-  if (normalized.includes('financial')) return '🪙';
-  if (normalized.includes('operation')) return '⚙️';
-  if (normalized.includes('risk')) return '🛡️';
-  if (normalized.includes('growth')) return '📈';
-  if (normalized.includes('impact')) return '🌱';
-  return '◆';
 }
 
 function safeFilename(value: string) {
@@ -78,6 +58,44 @@ function safeFilename(value: string) {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .slice(0, 72);
+}
+
+function visualTheme(scope: AdvisorPosterScope) {
+  const text = `${scope.sector} ${scope.subsector} ${scope.model}`.toLowerCase();
+  if (/อาหาร|food|restaurant|cafe|กาแฟ|เครื่องดื่ม/.test(text)) {
+    return { icon: '☕', accent: 'warm', kicker: 'FOOD & LIFESTYLE OPPORTUNITY' };
+  }
+  if (/education|ศึกษา|เรียน|edtech|course|กวดวิชา/.test(text)) {
+    return { icon: '🎓', accent: 'violet', kicker: 'EDUCATION GROWTH OPPORTUNITY' };
+  }
+  if (/technology|digital|saas|software|platform|ai|เทคโนโลยี/.test(text)) {
+    return { icon: '💻', accent: 'cyan', kicker: 'DIGITAL BUSINESS OPPORTUNITY' };
+  }
+  if (/health|wellness|clinic|beauty|สุขภาพ|ความงาม/.test(text)) {
+    return { icon: '✚', accent: 'green', kicker: 'HEALTH & WELLNESS OPPORTUNITY' };
+  }
+  if (/tourism|travel|hotel|ท่องเที่ยว|ที่พัก/.test(text)) {
+    return { icon: '✈', accent: 'sunset', kicker: 'TOURISM & EXPERIENCE OPPORTUNITY' };
+  }
+  if (/retail|e-commerce|commerce|ค้าปลีก/.test(text)) {
+    return { icon: '🛍', accent: 'cyan', kicker: 'RETAIL & COMMERCE OPPORTUNITY' };
+  }
+  if (/manufacturing|agriculture|เกษตร|ผลิต|b2b/.test(text)) {
+    return { icon: '🏭', accent: 'green', kicker: 'INDUSTRY & SUPPLY OPPORTUNITY' };
+  }
+  if (/property|อสังหาริมทรัพย์|coworking|เช่า/.test(text)) {
+    return { icon: '🏙', accent: 'violet', kicker: 'PROPERTY & LOCATION OPPORTUNITY' };
+  }
+  if (/creative|media|content|ครีเอทีฟ|สื่อ/.test(text)) {
+    return { icon: '🎬', accent: 'sunset', kicker: 'CREATIVE BUSINESS OPPORTUNITY' };
+  }
+  return { icon: '◆', accent: 'cyan', kicker: 'DECISION INTELLIGENCE OPPORTUNITY' };
+}
+
+function compactScope(scope: AdvisorPosterScope) {
+  return [scope.sector || scope.subsector, scope.target, scope.model]
+    .filter(Boolean)
+    .join('  •  ');
 }
 
 export default function AdvisorInfographicPoster({
@@ -94,22 +112,15 @@ export default function AdvisorInfographicPoster({
   const [generating, setGenerating] = useState(true);
   const [generationError, setGenerationError] = useState('');
 
-  const topCriteria = useMemo(
-    () =>
-      result.structure.criteria
-        .map((criterion, index) => ({
-          ...criterion,
-          weight: result.analysis.weights[index] ?? 0,
-        }))
-        .sort((a, b) => b.weight - a.weight)
-        .slice(0, 6),
-    [result],
-  );
-
-  const topAlternatives = result.analysis.consensus.slice(0, 4);
+  const theme = useMemo(() => visualTheme(scope), [scope]);
+  const topFactors = result.analysis.topFactors.slice(0, 3);
+  const runnersUp = result.analysis.consensus.slice(1, 4);
   const sourceBadges = Array.from(
     new Set(result.sources.map((source) => affiliation(source.url))),
   ).slice(0, 5);
+  const firstVotes = result.analysis.advisors.filter(
+    (advisor) => advisor.winnerIndex === result.analysis.winnerIndex,
+  ).length;
 
   const generate = useCallback(async () => {
     const node = posterRef.current;
@@ -119,30 +130,28 @@ export default function AdvisorInfographicPoster({
     setGenerationError('');
 
     try {
-      if ('fonts' in document) {
-        await document.fonts.ready;
-      }
+      if ('fonts' in document) await document.fonts.ready;
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
       const dataUrl = await toPng(node, {
         cacheBust: false,
         pixelRatio: 1,
-        backgroundColor: '#eef6ff',
+        backgroundColor: '#07162f',
         width: 1080,
-        height: 1528,
+        height: 1350,
         style: {
           width: '1080px',
-          height: '1528px',
+          height: '1350px',
           transform: 'none',
         },
       });
       setPngUrl(dataUrl);
     } catch (error) {
-      console.error('MCDA infographic generation failed', error);
+      console.error('MCDA promo poster generation failed', error);
       setGenerationError(
         english
-          ? 'The infographic could not be rendered. You can retry without rerunning the MCDA analysis.'
-          : 'ยังสร้างภาพ Infographic ไม่สำเร็จ สามารถกดสร้างใหม่ได้โดยไม่ต้องวิเคราะห์ MCDA ซ้ำ',
+          ? 'The promotional poster could not be rendered. Retry without rerunning MCDA.'
+          : 'ยังสร้าง Promo Poster ไม่สำเร็จ สามารถกดสร้างใหม่ได้โดยไม่ต้องวิเคราะห์ MCDA ซ้ำ',
       );
     } finally {
       setGenerating(false);
@@ -154,18 +163,18 @@ export default function AdvisorInfographicPoster({
     void generate();
   }, [generate, result]);
 
-  const downloadName = `MCDA-Advisor-${safeFilename(result.analysis.winnerName || 'result')}.png`;
+  const downloadName = `MCDA-Promo-${safeFilename(result.analysis.winnerName || 'result')}.png`;
 
   return (
     <section className={styles.wrap}>
       <div className={styles.previewHeader}>
         <div>
-          <span>{english ? 'AUTO-GENERATED RESULT POSTER' : 'INFOGRAPHIC สรุปผลอัตโนมัติ'}</span>
-          <strong>{english ? 'One-page MCDA Infographic' : 'One-Page MCDA Infographic'}</strong>
+          <span>{english ? 'AUTO-GENERATED PROMO POSTER' : 'PROMO POSTER สรุปผลอัตโนมัติ'}</span>
+          <strong>{english ? 'Cinematic Decision Poster' : 'Cinematic Decision Poster'}</strong>
           <small>
             {english
-              ? 'Generated from this analysis result — not from invented replacement values.'
-              : 'สร้างจากผลวิเคราะห์รอบนี้โดยตรง ไม่สร้างตัวเลขทดแทนขึ้นใหม่'}
+              ? 'A visual-first campaign poster generated from this MCDA result.'
+              : 'Poster เชิงประชาสัมพันธ์ที่สร้างจากผล MCDA รอบนี้โดยตรง'}
           </small>
         </div>
         <div className={styles.previewActions}>
@@ -184,11 +193,11 @@ export default function AdvisorInfographicPoster({
         {generating ? (
           <div className={styles.loading}>
             <div className={styles.spinner} />
-            <strong>{english ? 'Generating the one-page poster…' : 'กำลังสร้าง Poster สรุปผล…'}</strong>
-            <span>Scope → Criteria → Entropy → Alternatives → MCDA → Recommendation</span>
+            <strong>{english ? 'Creating the promotional poster…' : 'กำลังสร้าง Promo Poster…'}</strong>
+            <span>{english ? 'Visual story → winner → reasons → MCDA consensus' : 'ภาพหลัก → ทางเลือกเด่น → เหตุผล → MCDA consensus'}</span>
           </div>
         ) : pngUrl ? (
-          <img src={pngUrl} alt={english ? 'MCDA analysis infographic' : 'อินโฟกราฟิกสรุปผลการวิเคราะห์ MCDA'} />
+          <img src={pngUrl} alt={english ? 'MCDA promotional poster' : 'โปสเตอร์ประชาสัมพันธ์สรุปผล MCDA'} />
         ) : (
           <div className={styles.failure}>
             <strong>{generationError}</strong>
@@ -200,174 +209,101 @@ export default function AdvisorInfographicPoster({
       </div>
 
       <div className={styles.captureStage} aria-hidden="true">
-        <div ref={posterRef} className={styles.poster}>
-          <header className={styles.posterHeader}>
-            <div className={styles.botBadge}>
+        <div ref={posterRef} className={`${styles.poster} ${styles[theme.accent]}`}>
+          <div className={styles.glowOne} />
+          <div className={styles.glowTwo} />
+          <div className={styles.gridLines} />
+
+          <header className={styles.topBar}>
+            <div className={styles.brand}>
               <span>✦</span>
               <div>
                 <b>MCDA</b>
-                <small>Advisor Bot</small>
+                <small>ADVISOR</small>
               </div>
             </div>
-            <div className={styles.titleBlock}>
-              <span>{english ? 'DECISION INTELLIGENCE · ONE-PAGE INFOGRAPHIC' : 'DECISION INTELLIGENCE · ONE-PAGE INFOGRAPHIC'}</span>
-              <h1>{english ? 'MCDA Analysis Summary' : 'สรุปผลการวิเคราะห์จาก MCDA Advisor Bot'}</h1>
-              <p>
-                {english
-                  ? 'Scope → Criteria → Evidence → Entropy Weight → 5 MCDA methods'
-                  : 'Scope → Criteria → Evidence → Entropy Weight → ที่ปรึกษา MCDA 5 วิธี'}
-              </p>
-            </div>
-            <div className={styles.headerGraphic}>
-              <span>📊</span>
-              <i>↗</i>
-            </div>
+            <div className={styles.methodCapsule}>TOPSIS · VIKOR · WASPAS · MOORA · PROMETHEE</div>
           </header>
 
-          <section className={styles.metaBand}>
-            <div><span>🎯</span><p><b>{english ? 'Objective' : 'เป้าหมาย'}</b>{result.structure.objective}</p></div>
-            <div><span>⚖️</span><p><b>{english ? 'Weighting' : 'วิธีถ่วงน้ำหนัก'}</b>Entropy Weight Method</p></div>
-            <div><span>🧩</span><p><b>{english ? 'MCDA Panel' : 'ที่ปรึกษา MCDA'}</b>TOPSIS · VIKOR · WASPAS · MOORA · PROMETHEE</p></div>
+          <main className={styles.hero}>
+            <div className={styles.kicker}>{theme.kicker}</div>
+            <div className={styles.visualStage}>
+              <div className={styles.orbit orbitOne} />
+              <div className={styles.orbit orbitTwo} />
+              <div className={styles.visualHalo} />
+              <div className={styles.heroIcon}>{theme.icon}</div>
+              <div className={styles.chartGlyph}>
+                <i />
+                <i />
+                <i />
+                <i />
+                <b>↗</b>
+              </div>
+              <div className={styles.choiceBadge}>
+                <small>{english ? 'MCDA BEST CHOICE' : 'MCDA BEST CHOICE'}</small>
+                <strong>{firstVotes}/5</strong>
+                <span>{english ? 'first-place votes' : 'วิธีให้อันดับ 1'}</span>
+              </div>
+            </div>
+
+            <div className={styles.heroCopy}>
+              <span>{english ? 'RECOMMENDED' : 'ทางเลือกที่แนะนำ'}</span>
+              <h1>{result.analysis.winnerName}</h1>
+              <p>{compactScope(scope)}</p>
+            </div>
+          </main>
+
+          <section className={styles.sellingPoints}>
+            {topFactors.map((factor, index) => (
+              <div key={factor.criterionId}>
+                <span>{['01','02','03'][index]}</span>
+                <b>{factor.criterionName}</b>
+                <strong>{pct(factor.weight)}</strong>
+              </div>
+            ))}
           </section>
 
-          <section className={styles.posterSection}>
-            <div className={styles.sectionTitle}><b>1</b><span>{english ? 'Scope · Decision Context' : 'Scope · ขอบเขตการตัดสินใจ'}</span></div>
-            <div className={styles.scopeFlow}>
-              {[
-                ['🔎', english ? 'Interest' : 'สิ่งที่สนใจ', scope.interest],
-                ['🏪', english ? 'Business' : 'กลุ่มธุรกิจ', scope.sector || scope.subsector],
-                ['👥', english ? 'Target' : 'กลุ่มเป้าหมาย', scope.target],
-                ['🎯', english ? 'Expectation' : 'ความคาดหวัง', scope.expectation],
-                ['💼', 'Business Model', scope.model],
-                ['⚠️', english ? 'Constraints' : 'ข้อจำกัด', scope.constraints],
-              ].map(([icon, title, value], index) => (
-                <div className={styles.scopeNode} key={String(title)}>
-                  <span>{icon}</span>
-                  <b>{title}</b>
-                  <small>{value || '—'}</small>
-                  {index < 5 ? <i>›</i> : null}
+          <section className={styles.consensusStrip}>
+            <div className={styles.consensusLead}>
+              <small>{english ? 'DECISION CONSENSUS' : 'DECISION CONSENSUS'}</small>
+              <strong>{pct(result.analysis.agreement)}</strong>
+            </div>
+            <div className={styles.methods}>
+              {result.analysis.advisors.map((advisor) => (
+                <div key={advisor.method}>
+                  <span>{advisor.method}</span>
+                  <b>{advisor.winnerIndex === result.analysis.winnerIndex ? '✓' : '•'}</b>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className={styles.dualGrid}>
-            <div className={styles.posterSection}>
-              <div className={styles.sectionTitle}><b>2</b><span>{english ? 'Criteria Structure' : 'Criteria Structure · เกณฑ์ที่ใช้ตัดสินใจ'}</span></div>
-              <div className={styles.criteriaCards}>
-                {topCriteria.map((criterion) => (
-                  <div className={styles.criteriaCard} key={criterion.id}>
-                    <span>{iconForGroup(criterion.group)}</span>
-                    <div>
-                      <b>{criterion.name}</b>
-                      <small>{criterion.unit} · {criterion.direction === 'benefit' ? 'Benefit ↑' : 'Cost ↓'}</small>
-                    </div>
-                  </div>
+          {runnersUp.length ? (
+            <section className={styles.runners}>
+              <small>{english ? 'OTHER OPTIONS' : 'ทางเลือกอื่นที่น่าสนใจ'}</small>
+              <div>
+                {runnersUp.map((item) => (
+                  <span key={item.alternativeIndex}>
+                    <b>#{item.rank}</b> {item.alternativeName}
+                  </span>
                 ))}
               </div>
-            </div>
-
-            <div className={styles.posterSection}>
-              <div className={styles.sectionTitle}><b>3</b><span>{english ? 'Entropy Weight' : 'Entropy Weight · น้ำหนัก Criteria'}</span></div>
-              <div className={styles.weightList}>
-                {topCriteria.map((criterion, index) => (
-                  <div className={styles.weightRow} key={criterion.id}>
-                    <span>C{index + 1}</span>
-                    <div>
-                      <b>{criterion.name}</b>
-                      <i><em style={{ width: `${Math.max(3, criterion.weight * 100)}%` }} /></i>
-                    </div>
-                    <strong>{pct(criterion.weight)}</strong>
-                  </div>
-                ))}
-                <div className={styles.weightTotal}>
-                  <span>{english ? 'Total weight' : 'น้ำหนักรวม'}</span>
-                  <b>{result.analysis.weights.reduce((sum, value) => sum + value, 0).toFixed(3)}</b>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className={styles.posterSection}>
-            <div className={styles.sectionTitle}><b>4</b><span>{english ? 'Alternatives & Measurable Data' : 'ทางเลือกที่นำมาวิเคราะห์ · Alternatives'}</span></div>
-            <div className={styles.altGrid}>
-              {topAlternatives.map((alternative, index) => {
-                const structureAlternative = result.structure.alternatives[alternative.alternativeIndex];
-                const criterionHighlights = result.structure.criteria
-                  .slice(0, 3)
-                  .map((criterion) => ({
-                    name: criterion.name,
-                    value: criterion.values[alternative.alternativeIndex],
-                    unit: criterion.unit,
-                  }));
-
-                return (
-                  <div className={`${styles.altCard} ${index === 0 ? styles.altWinner : ''}`} key={alternative.alternativeIndex}>
-                    <div className={styles.altTop}>
-                      <span>{String.fromCharCode(65 + index)}</span>
-                      <b>{structureAlternative?.name || alternative.alternativeName}</b>
-                      {index === 0 ? <em>★ BEST</em> : null}
-                    </div>
-                    <p>{structureAlternative?.description || ''}</p>
-                    <div className={styles.altMetrics}>
-                      {criterionHighlights.map((item) => (
-                        <span key={item.name}><b>{shortNumber(item.value)}</b> {item.unit}</span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className={styles.dualGridBottom}>
-            <div className={styles.posterSection}>
-              <div className={styles.sectionTitle}><b>5</b><span>{english ? 'Ranking Results · 5 Advisors' : 'ผลจัดอันดับจาก MCDA 5 วิธี'}</span></div>
-              <div className={styles.methodTable}>
-                {result.analysis.advisors.map((advisor) => (
-                  <div className={styles.methodRow} key={advisor.method}>
-                    <strong>{advisor.method}</strong>
-                    <div>
-                      {advisor.ranks.slice(0, 4).map((ranked) => (
-                        <span key={ranked.alternativeIndex}>#{ranked.rank} {ranked.alternativeName}</span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className={styles.finalCard}>
-              <span className={styles.crown}>👑</span>
-              <small>{english ? 'FINAL RECOMMENDATION' : 'ผลสรุปร่วม · FINAL RECOMMENDATION'}</small>
-              <h2>{result.analysis.winnerName}</h2>
-              <p>{result.answer.summary}</p>
-              <div className={styles.finalStats}>
-                <span><b>{result.analysis.advisors.filter((advisor) => advisor.winnerIndex === result.analysis.winnerIndex).length}/5</b>{english ? 'first-place votes' : 'วิธีให้อันดับ 1'}</span>
-                <span><b>{pct(result.analysis.agreement)}</b>{english ? 'agreement' : 'ความเห็นสอดคล้อง'}</span>
-              </div>
-            </div>
-          </section>
-
-          <section className={styles.reasonBand}>
-            <div className={styles.sectionTitle}><b>6</b><span>{english ? 'Why this option stands out' : 'เหตุผลที่ทางเลือกนี้โดดเด่น'}</span></div>
-            <div className={styles.reasonCards}>
-              {result.analysis.topFactors.slice(0, 4).map((factor, index) => (
-                <div key={factor.criterionId}>
-                  <span>{['🪙','📈','⏱️','🛡️'][index] || '◆'}</span>
-                  <b>{factor.criterionName}</b>
-                  <strong>{pct(factor.weight)}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
+            </section>
+          ) : null}
 
           <footer className={styles.posterFooter}>
-            <div>
-              <b>{english ? 'Trusted data sources' : 'แหล่งข้อมูลอ้างอิง'}</b>
-              {sourceBadges.length ? sourceBadges.map((source) => <span key={source}>{source}</span>) : <span>{english ? 'Model-estimated proxy data used where evidence was unavailable' : 'ใช้ Proxy ที่ระบุชัดเจนในส่วนที่ไม่มีข้อมูลจริงเพียงพอ'}</span>}
+            <div className={styles.sourceLine}>
+              <small>{english ? 'TRUSTED DATA' : 'TRUSTED DATA'}</small>
+              <div>
+                {sourceBadges.length
+                  ? sourceBadges.map((source) => <span key={source}>{source}</span>)
+                  : <span>MCDA DATA</span>}
+              </div>
             </div>
-            <small>MCDA Advisor · Generated automatically from the current analysis</small>
+            <div className={styles.footerBrand}>
+              <b>MCDA Advisor Bot</b>
+              <small>{english ? 'Evidence → Entropy → Decision' : 'Evidence → Entropy → Decision'}</small>
+            </div>
           </footer>
         </div>
       </div>
