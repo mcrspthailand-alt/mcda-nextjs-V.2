@@ -245,14 +245,14 @@ try {
   await page.getByRole('button', { name: 'สร้าง Criteria Structure' }).click();
   await page.getByRole('button', { name: /ค้นหาทางเลือก/ }).click();
 
-  await page.getByText('INFOGRAPHIC สรุปผลอัตโนมัติ').waitFor({ timeout: 10000 });
-  const posterImage = page.getByRole('img', { name: 'อินโฟกราฟิกสรุปผลการวิเคราะห์ MCDA' });
+  await page.getByText('PROMO POSTER สรุปผลอัตโนมัติ').waitFor({ timeout: 10000 });
+  const posterImage = page.getByRole('img', { name: 'โปสเตอร์ประชาสัมพันธ์สรุปผล MCDA' });
   await posterImage.waitFor({ timeout: 20000 });
   assert.ok((await posterImage.getAttribute('src'))?.startsWith('data:image/png;base64,'));
   const download = page.getByRole('link', { name: 'ดาวน์โหลด PNG' });
   assert.ok((await download.getAttribute('href'))?.startsWith('data:image/png;base64,'));
   await page.screenshot({ path: 'test-results/navigation/advisor-infographic.png', fullPage: false });
-  console.log('Infographic poster generation regression passed: Scope -> Criteria -> Analysis -> PNG preview/download.');
+  console.log('Promo poster generation regression passed: Scope -> Criteria -> Analysis -> PNG preview/download.');
 
   assert.deepEqual(errors, [], 'no uncaught browser errors');
   console.log('Navigation browser regression passed: direct hashes, repeated Next Link returns, Back/Forward, state preservation, desktop/mobile.');
