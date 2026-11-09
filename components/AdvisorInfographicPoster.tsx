@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 import type { AdvisorAnalysis, AdvisorStructure } from '@/lib/advisor/mcda';
 import styles from './AdvisorInfographicPoster.module.css';
+import aiStyles from './AdvisorInfographicPosterAI.module.css';
 
 export type AdvisorPosterScope = {
   interest: string;
@@ -284,7 +285,7 @@ export default function AdvisorInfographicPoster({
       </div>
 
       {visualPrompt ? (
-        <details className={styles.promptDetails}>
+        <details className={aiStyles.promptDetails}>
           <summary>{english ? 'View image-generation prompt' : 'ดู Prompt ที่ใช้ Gen รูป'}</summary>
           <pre>{visualPrompt}</pre>
           {visualModel ? <small>{english ? 'Model' : 'โมเดล'}: {visualModel}</small> : null}
@@ -313,8 +314,8 @@ export default function AdvisorInfographicPoster({
             <div className={styles.visualStage}>
               {visualUrl ? (
                 <>
-                  <img className={styles.aiVisual} src={visualUrl} alt="" />
-                  <div className={styles.aiVisualShade} />
+                  <img className={aiStyles.aiVisual} src={visualUrl} alt="" />
+                  <div className={aiStyles.aiVisualShade} />
                 </>
               ) : (
                 <>
