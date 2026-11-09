@@ -228,8 +228,8 @@ export default function AdvisorInfographicPoster({
           <main className={styles.hero}>
             <div className={styles.kicker}>{theme.kicker}</div>
             <div className={styles.visualStage}>
-              <div className={styles.orbit orbitOne} />
-              <div className={styles.orbit orbitTwo} />
+              <div className={`${styles.orbit} ${styles.orbitOne}`} />
+              <div className={`${styles.orbit} ${styles.orbitTwo}`} />
               <div className={styles.visualHalo} />
               <div className={styles.heroIcon}>{theme.icon}</div>
               <div className={styles.chartGlyph}>
