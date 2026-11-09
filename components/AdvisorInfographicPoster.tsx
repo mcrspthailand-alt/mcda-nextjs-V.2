@@ -128,14 +128,18 @@ export default function AdvisorInfographicPoster({
   const [generationError, setGenerationError] = useState('');
 
   const theme = useMemo(() => visualTheme(scope), [scope]);
-  const topFactors = result.analysis.topFactors.slice(0, 3);
-  const runnersUp = result.analysis.consensus.slice(1, 4);
-  const sourceBadges = Array.from(
-    new Set(result.sources.map((source) => affiliation(source.url))),
-  ).slice(0, 5);
-  const firstVotes = result.analysis.advisors.filter(
-    (advisor) => advisor.winnerIndex === result.analysis.winnerIndex,
-  ).length;
+  const topFactors = useMemo(() => result.analysis.topFactors.slice(0, 3), [result]);
+  const runnersUp = useMemo(() => result.analysis.consensus.slice(1, 4), [result]);
+  const sourceBadges = useMemo(
+    () => Array.from(new Set(result.sources.map((source) => affiliation(source.url)))).slice(0, 5),
+    [result],
+  );
+  const firstVotes = useMemo(
+    () => result.analysis.advisors.filter(
+      (advisor) => advisor.winnerIndex === result.analysis.winnerIndex,
+    ).length,
+    [result],
+  );
 
   const capturePoster = useCallback(async () => {
     const node = posterRef.current;
