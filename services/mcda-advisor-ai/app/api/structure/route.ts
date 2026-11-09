@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { gateway, generateText, isStepCount, Output, tool } from 'ai';
+import { gateway, generateText, isStepCount, tool } from 'ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -142,6 +142,23 @@ function historyText(history: Array<{ role: 'user' | 'assistant'; content: strin
   return history.map((message) => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.content}`).join('\n');
 }
 
+function parseDecisionStructure(text: string) {
+  const trimmed = text.trim();
+  const unfenced = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+
+  const firstBrace = unfenced.indexOf('{');
+  const lastBrace = unfenced.lastIndexOf('}');
+  if (firstBrace < 0 || lastBrace <= firstBrace) {
+    throw new Error('The advisor model did not return a JSON decision structure.');
+  }
+
+  const parsed = JSON.parse(unfenced.slice(firstBrace, lastBrace + 1));
+  return decisionStructureSchema.parse(parsed);
+}
+
 export async function POST(request: NextRequest) {
   const expectedSecret = process.env.MCDA_ADVISOR_SERVICE_SECRET;
   const suppliedSecret = request.headers.get('x-advisor-secret');
@@ -196,7 +213,7 @@ STRUCTURE RULES
 12. Keep the hierarchy compact enough for a chatbot.
 13. ${languageInstruction}
 
-Return only the structured object.
+OUTPUT FORMAT\nReturn exactly one JSON object and no prose, Markdown, or code fences.\nThe object must contain: objective, contextSummary, alternatives, groups, criteria, and caveats.\nEach criterion must contain id, name, group, unit, direction, values, basis, confidence, and measurementNote.\nReturn only the JSON object.
 `;
 
   try {
@@ -210,11 +227,6 @@ Return only the structured object.
         browserbase_fetch: gateway.tools.browserbaseFetch({ allowRedirects: true }),
       },
       stopWhen: isStepCount(5),
-      output: Output.object({
-        name: 'MCDAAdvisorDecisionStructure',
-        description: 'Hierarchical alternatives, measurable criteria and numeric data for deterministic MCDA.',
-        schema: decisionStructureSchema,
-      }),
       prompt,
     });
 
@@ -244,7 +256,7 @@ Return only the structured object.
     for (const source of [...browserSources, ...customSources]) unique.set(source.url, source);
 
     return NextResponse.json({
-      structure: result.output,
+      structure: parseDecisionStructure(result.text),
       sources: [...unique.values()].slice(0, 10),
       meta: {
         model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna',
