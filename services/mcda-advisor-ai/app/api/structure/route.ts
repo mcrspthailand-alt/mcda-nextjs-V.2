@@ -256,7 +256,7 @@ OUTPUT FORMAT\nReturn exactly one JSON object and no prose, Markdown, or code fe
     for (const source of [...browserSources, ...customSources]) unique.set(source.url, source);
 
     return NextResponse.json({
-      structure: parseDecisionStructure(result.text),
+      structure: parseDecisionStructure(result.text, body.question),
       sources: [...unique.values()].slice(0, 10),
       meta: {
         model: process.env.MCDA_ADVISOR_MODEL || 'openai/gpt-5.6-luna',
