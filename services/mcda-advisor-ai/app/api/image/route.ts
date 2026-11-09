@@ -108,15 +108,15 @@ export async function POST(request: NextRequest) {
       prompt,
     });
 
-    const image = result.files.find((file) => file.mimeType.startsWith('image/'));
+    const image = result.files.find((file) => file.mediaType.startsWith('image/'));
     if (!image) {
       throw new Error('Image model returned no image file.');
     }
 
     return NextResponse.json(
       {
-        image: `data:${image.mimeType};base64,${image.base64}`,
-        mimeType: image.mimeType,
+        image: `data:${image.mediaType};base64,${image.base64}`,
+        mimeType: image.mediaType,
         model,
         prompt,
       },
