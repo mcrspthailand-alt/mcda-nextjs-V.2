@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
 import type { AdvisorAnalysis, AdvisorStructure } from '@/lib/advisor/mcda';
 import styles from './AdvisorInfographicPoster.module.css';
+import aiStyles from './AdvisorInfographicPosterAI.module.css';
 
 export type AdvisorPosterScope = {
   interest: string;
@@ -98,6 +99,16 @@ function compactScope(scope: AdvisorPosterScope) {
     .join('  •  ');
 }
 
+async function waitForImage(url: string) {
+  if (!url) return;
+  await new Promise<void>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error('Generated visual could not be loaded.'));
+    image.src = url;
+  });
+}
+
 export default function AdvisorInfographicPoster({
   result,
   scope,
@@ -109,59 +120,128 @@ export default function AdvisorInfographicPoster({
 }) {
   const posterRef = useRef<HTMLDivElement | null>(null);
   const [pngUrl, setPngUrl] = useState('');
+  const [visualUrl, setVisualUrl] = useState('');
+  const [visualModel, setVisualModel] = useState('');
+  const [visualPrompt, setVisualPrompt] = useState('');
+  const [visualReady, setVisualReady] = useState(false);
   const [generating, setGenerating] = useState(true);
   const [generationError, setGenerationError] = useState('');
 
   const theme = useMemo(() => visualTheme(scope), [scope]);
-  const topFactors = result.analysis.topFactors.slice(0, 3);
-  const runnersUp = result.analysis.consensus.slice(1, 4);
-  const sourceBadges = Array.from(
-    new Set(result.sources.map((source) => affiliation(source.url))),
-  ).slice(0, 5);
-  const firstVotes = result.analysis.advisors.filter(
-    (advisor) => advisor.winnerIndex === result.analysis.winnerIndex,
-  ).length;
+  const topFactors = useMemo(() => result.analysis.topFactors.slice(0, 3), [result]);
+  const runnersUp = useMemo(() => result.analysis.consensus.slice(1, 4), [result]);
+  const sourceBadges = useMemo(
+    () => Array.from(new Set(result.sources.map((source) => affiliation(source.url)))).slice(0, 5),
+    [result],
+  );
+  const firstVotes = useMemo(
+    () => result.analysis.advisors.filter(
+      (advisor) => advisor.winnerIndex === result.analysis.winnerIndex,
+    ).length,
+    [result],
+  );
 
-  const generate = useCallback(async () => {
+  const capturePoster = useCallback(async () => {
     const node = posterRef.current;
     if (!node) return;
 
+    if ('fonts' in document) await document.fonts.ready;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
+    const dataUrl = await toPng(node, {
+      cacheBust: false,
+      pixelRatio: 1,
+      backgroundColor: '#07162f',
+      width: 1080,
+      height: 1350,
+      style: {
+        width: '1080px',
+        height: '1350px',
+        transform: 'none',
+      },
+    });
+    setPngUrl(dataUrl);
+  }, []);
+
+  const generate = useCallback(async () => {
     setGenerating(true);
+    setVisualReady(false);
+    setPngUrl('');
     setGenerationError('');
+    setVisualPrompt('');
 
     try {
-      if ('fonts' in document) await document.fonts.ready;
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-
-      const dataUrl = await toPng(node, {
-        cacheBust: false,
-        pixelRatio: 1,
-        backgroundColor: '#07162f',
-        width: 1080,
-        height: 1350,
-        style: {
-          width: '1080px',
-          height: '1350px',
-          transform: 'none',
-        },
+      const response = await fetch('/api/advisor/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          language: english ? 'en' : 'th',
+          scope,
+          analysis: {
+            winnerName: result.analysis.winnerName,
+            summary: result.answer.summary,
+            agreement: result.analysis.agreement,
+            firstVotes,
+            topFactors: result.analysis.topFactors.slice(0, 5).map((factor) => ({
+              name: factor.criterionName,
+              weight: factor.weight,
+            })),
+            runnersUp: runnersUp.map((item) => item.alternativeName),
+          },
+        }),
       });
-      setPngUrl(dataUrl);
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.image) {
+        throw new Error(data?.message || 'AI visual generation failed.');
+      }
+
+      await waitForImage(data.image);
+      setVisualUrl(data.image);
+      setVisualModel(typeof data.model === 'string' ? data.model : '');
+      setVisualPrompt(typeof data.prompt === 'string' ? data.prompt : '');
     } catch (error) {
-      console.error('MCDA promo poster generation failed', error);
+      console.warn('MCDA Advisor AI visual unavailable; using deterministic visual fallback', error);
+      setVisualUrl('');
+      setVisualModel('deterministic-fallback');
       setGenerationError(
         english
-          ? 'The promotional poster could not be rendered. Retry without rerunning MCDA.'
-          : 'ยังสร้าง Promo Poster ไม่สำเร็จ สามารถกดสร้างใหม่ได้โดยไม่ต้องวิเคราะห์ MCDA ซ้ำ',
+          ? 'AI artwork was unavailable, so the poster used the built-in visual fallback.'
+          : 'ภาพ AI ไม่พร้อมใช้งาน จึงใช้ภาพสำรองของระบบ แต่ข้อมูล MCDA และตัวอักษรยังถูกต้อง',
       );
     } finally {
-      setGenerating(false);
+      setVisualReady(true);
     }
-  }, [english]);
+  }, [english, firstVotes, result, runnersUp, scope]);
 
   useEffect(() => {
-    setPngUrl('');
     void generate();
-  }, [generate, result]);
+  }, [generate]);
+
+  useEffect(() => {
+    if (!visualReady) return;
+    let active = true;
+    const run = async () => {
+      try {
+        await capturePoster();
+      } catch (error) {
+        console.error('MCDA promo poster capture failed', error);
+        if (active) {
+          setGenerationError(
+            english
+              ? 'The promotional poster could not be rendered. Retry without rerunning MCDA.'
+              : 'ยังสร้าง Promo Poster ไม่สำเร็จ สามารถกดสร้างใหม่ได้โดยไม่ต้องวิเคราะห์ MCDA ซ้ำ',
+          );
+        }
+      } finally {
+        if (active) setGenerating(false);
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [capturePoster, english, visualReady, visualUrl]);
 
   const downloadName = `MCDA-Promo-${safeFilename(result.analysis.winnerName || 'result')}.png`;
 
@@ -169,17 +249,17 @@ export default function AdvisorInfographicPoster({
     <section className={styles.wrap}>
       <div className={styles.previewHeader}>
         <div>
-          <span>{english ? 'AUTO-GENERATED PROMO POSTER' : 'PROMO POSTER สรุปผลอัตโนมัติ'}</span>
-          <strong>{english ? 'Cinematic Decision Poster' : 'Cinematic Decision Poster'}</strong>
+          <span>{english ? 'AI-GENERATED ONE-PAGE INFOGRAPHIC' : 'AI INFOGRAPHIC + ONE PAGE สรุปผลอัตโนมัติ'}</span>
+          <strong>{english ? 'Semantic MCDA Campaign Visual' : 'Semantic MCDA Campaign Visual'}</strong>
           <small>
             {english
-              ? 'A visual-first campaign poster generated from this MCDA result.'
-              : 'Poster เชิงประชาสัมพันธ์ที่สร้างจากผล MCDA รอบนี้โดยตรง'}
+              ? 'AI artwork from the MCDA analysis + crisp programmatic typography.'
+              : 'AI สร้างภาพหลักจากผลวิเคราะห์จริง แล้วระบบวางตัวอักษรคมชัดทับอีกชั้น'}
           </small>
         </div>
         <div className={styles.previewActions}>
           <button type="button" onClick={() => void generate()} disabled={generating}>
-            {generating ? (english ? 'Generating…' : 'กำลังสร้าง…') : (english ? 'Regenerate' : 'สร้างใหม่')}
+            {generating ? (english ? 'Generating…' : 'กำลัง Gen ภาพ…') : (english ? 'Regenerate AI visual' : 'Gen รูปใหม่')}
           </button>
           {pngUrl ? (
             <a href={pngUrl} download={downloadName}>
@@ -193,11 +273,11 @@ export default function AdvisorInfographicPoster({
         {generating ? (
           <div className={styles.loading}>
             <div className={styles.spinner} />
-            <strong>{english ? 'Creating the promotional poster…' : 'กำลังสร้าง Promo Poster…'}</strong>
-            <span>{english ? 'Visual story → winner → reasons → MCDA consensus' : 'ภาพหลัก → ทางเลือกเด่น → เหตุผล → MCDA consensus'}</span>
+            <strong>{english ? 'Creating the one-page infographic…' : 'กำลังสร้าง One-page Infographic…'}</strong>
+            <span>{english ? 'MCDA analysis → semantic artwork → bright typography → PNG' : 'ผล MCDA → ภาพตรงความหมาย → ตัวอักษรสว่างคมชัด → PNG'}</span>
           </div>
         ) : pngUrl ? (
-          <img src={pngUrl} alt={english ? 'MCDA promotional poster' : 'โปสเตอร์ประชาสัมพันธ์สรุปผล MCDA'} />
+          <img src={pngUrl} alt={english ? 'MCDA AI infographic poster' : 'อินโฟกราฟิก AI สรุปผล MCDA'} />
         ) : (
           <div className={styles.failure}>
             <strong>{generationError}</strong>
@@ -207,6 +287,14 @@ export default function AdvisorInfographicPoster({
           </div>
         )}
       </div>
+
+      {visualPrompt ? (
+        <details className={aiStyles.promptDetails}>
+          <summary>{english ? 'View image-generation prompt' : 'ดู Prompt ที่ใช้ Gen รูป'}</summary>
+          <pre>{visualPrompt}</pre>
+          {visualModel ? <small>{english ? 'Model' : 'โมเดล'}: {visualModel}</small> : null}
+        </details>
+      ) : null}
 
       <div className={styles.captureStage} aria-hidden="true">
         <div ref={posterRef} className={`${styles.poster} ${styles[theme.accent]}`}>
@@ -228,17 +316,26 @@ export default function AdvisorInfographicPoster({
           <main className={styles.hero}>
             <div className={styles.kicker}>{theme.kicker}</div>
             <div className={styles.visualStage}>
-              <div className={`${styles.orbit} ${styles.orbitOne}`} />
-              <div className={`${styles.orbit} ${styles.orbitTwo}`} />
-              <div className={styles.visualHalo} />
-              <div className={styles.heroIcon}>{theme.icon}</div>
-              <div className={styles.chartGlyph}>
-                <i />
-                <i />
-                <i />
-                <i />
-                <b>↗</b>
-              </div>
+              {visualUrl ? (
+                <>
+                  <img className={aiStyles.aiVisual} src={visualUrl} alt="" />
+                  <div className={aiStyles.aiVisualShade} />
+                </>
+              ) : (
+                <>
+                  <div className={`${styles.orbit} ${styles.orbitOne}`} />
+                  <div className={`${styles.orbit} ${styles.orbitTwo}`} />
+                  <div className={styles.visualHalo} />
+                  <div className={styles.heroIcon}>{theme.icon}</div>
+                  <div className={styles.chartGlyph}>
+                    <i />
+                    <i />
+                    <i />
+                    <i />
+                    <b>↗</b>
+                  </div>
+                </>
+              )}
               <div className={styles.choiceBadge}>
                 <small>{english ? 'MCDA BEST CHOICE' : 'MCDA BEST CHOICE'}</small>
                 <strong>{firstVotes}/5</strong>
@@ -256,7 +353,7 @@ export default function AdvisorInfographicPoster({
           <section className={styles.sellingPoints}>
             {topFactors.map((factor, index) => (
               <div key={factor.criterionId}>
-                <span>{['01','02','03'][index]}</span>
+                <span>{['01', '02', '03'][index]}</span>
                 <b>{factor.criterionName}</b>
                 <strong>{pct(factor.weight)}</strong>
               </div>
