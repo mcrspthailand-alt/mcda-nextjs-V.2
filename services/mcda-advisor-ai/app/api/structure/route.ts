@@ -193,28 +193,25 @@ function parseDecisionStructure(text: string, fallbackQuestion: string) {
     };
   });
 
-  let groups = (Array.isArray(raw.groups) ? raw.groups : []).map((item, index) => {
-    const value = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-    const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : `Group ${index + 1}`;
-    const explicitIds = Array.isArray(value.criteriaIds)
-      ? value.criteriaIds.filter((entry): entry is string => typeof entry === 'string')
-      : [];
-    const inferredIds = criteria.filter((criterion) => criterion.group === name).map((criterion) => criterion.id);
+  const rawGroups = Array.isArray(raw.groups) ? raw.groups : [];
+  const groupNames = Array.from(new Set(criteria.map((criterion) => criterion.group)));
+  const groups = groupNames.map((name) => {
+    const matchingRaw = rawGroups.find((item) => {
+      if (!item || typeof item !== 'object') return false;
+      const value = item as Record<string, unknown>;
+      return typeof value.name === 'string' && value.name.trim() === name;
+    }) as Record<string, unknown> | undefined;
 
     return {
       name,
-      description: typeof value.description === 'string' ? value.description : '',
-      criteriaIds: explicitIds.length ? explicitIds : inferredIds,
+      description: matchingRaw && typeof matchingRaw.description === 'string'
+        ? matchingRaw.description
+        : '',
+      criteriaIds: criteria
+        .filter((criterion) => criterion.group === name)
+        .map((criterion) => criterion.id),
     };
   });
-
-  if (!groups.length && criteria.length) {
-    groups = Array.from(new Set(criteria.map((criterion) => criterion.group))).map((name) => ({
-      name,
-      description: '',
-      criteriaIds: criteria.filter((criterion) => criterion.group === name).map((criterion) => criterion.id),
-    }));
-  }
 
   const normalized = {
     objective: typeof raw.objective === 'string' && raw.objective.trim()
