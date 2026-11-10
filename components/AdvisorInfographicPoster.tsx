@@ -31,28 +31,6 @@ export type AdvisorPosterResult = {
   };
 };
 
-function pct(value: number) {
-  return `${(value * 100).toFixed(0)}%`;
-}
-
-function affiliation(url: string) {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    if (host.endsWith('data.go.th')) return 'DGA';
-    if (host.endsWith('nso.go.th')) return 'NSO';
-    if (host.endsWith('dbd.go.th')) return 'DBD';
-    if (host.endsWith('bot.or.th')) return 'BOT';
-    if (host.endsWith('nesdc.go.th')) return 'NESDC';
-    if (host.endsWith('sme.go.th')) return 'OSMEP';
-    if (host.endsWith('tat.or.th')) return 'TAT';
-    if (host.endsWith('.go.th')) return 'GOV';
-    if (host.endsWith('.ac.th')) return 'ACADEMIC';
-    return host.replace(/^www\./, '').split('.')[0]?.toUpperCase() || 'SOURCE';
-  } catch {
-    return 'SOURCE';
-  }
-}
-
 function safeFilename(value: string) {
   return value
     .replace(/[\\/:*?"<>|]+/g, '-')
@@ -61,42 +39,10 @@ function safeFilename(value: string) {
     .slice(0, 72);
 }
 
-function visualTheme(scope: AdvisorPosterScope) {
-  const text = `${scope.sector} ${scope.subsector} ${scope.model}`.toLowerCase();
-  if (/อาหาร|food|restaurant|cafe|กาแฟ|เครื่องดื่ม/.test(text)) {
-    return { icon: '☕', accent: 'warm', kicker: 'FOOD & LIFESTYLE OPPORTUNITY' };
-  }
-  if (/education|ศึกษา|เรียน|edtech|course|กวดวิชา/.test(text)) {
-    return { icon: '🎓', accent: 'violet', kicker: 'EDUCATION GROWTH OPPORTUNITY' };
-  }
-  if (/technology|digital|saas|software|platform|ai|เทคโนโลยี/.test(text)) {
-    return { icon: '💻', accent: 'cyan', kicker: 'DIGITAL BUSINESS OPPORTUNITY' };
-  }
-  if (/health|wellness|clinic|beauty|สุขภาพ|ความงาม/.test(text)) {
-    return { icon: '✚', accent: 'green', kicker: 'HEALTH & WELLNESS OPPORTUNITY' };
-  }
-  if (/tourism|travel|hotel|ท่องเที่ยว|ที่พัก/.test(text)) {
-    return { icon: '✈', accent: 'sunset', kicker: 'TOURISM & EXPERIENCE OPPORTUNITY' };
-  }
-  if (/retail|e-commerce|commerce|ค้าปลีก/.test(text)) {
-    return { icon: '🛍', accent: 'cyan', kicker: 'RETAIL & COMMERCE OPPORTUNITY' };
-  }
-  if (/manufacturing|agriculture|เกษตร|ผลิต|b2b/.test(text)) {
-    return { icon: '🏭', accent: 'green', kicker: 'INDUSTRY & SUPPLY OPPORTUNITY' };
-  }
-  if (/property|อสังหาริมทรัพย์|coworking|เช่า/.test(text)) {
-    return { icon: '🏙', accent: 'violet', kicker: 'PROPERTY & LOCATION OPPORTUNITY' };
-  }
-  if (/creative|media|content|ครีเอทีฟ|สื่อ/.test(text)) {
-    return { icon: '🎬', accent: 'sunset', kicker: 'CREATIVE BUSINESS OPPORTUNITY' };
-  }
-  return { icon: '◆', accent: 'cyan', kicker: 'DECISION INTELLIGENCE OPPORTUNITY' };
-}
-
 function compactScope(scope: AdvisorPosterScope) {
-  return [scope.sector || scope.subsector, scope.target, scope.model]
+  return [scope.sector || scope.subsector, scope.target]
     .filter(Boolean)
-    .join('  •  ');
+    .join(' • ');
 }
 
 async function waitForImage(url: string) {
@@ -127,13 +73,7 @@ export default function AdvisorInfographicPoster({
   const [generating, setGenerating] = useState(true);
   const [generationError, setGenerationError] = useState('');
 
-  const theme = useMemo(() => visualTheme(scope), [scope]);
-  const topFactors = useMemo(() => result.analysis.topFactors.slice(0, 3), [result]);
-  const runnersUp = useMemo(() => result.analysis.consensus.slice(1, 4), [result]);
-  const sourceBadges = useMemo(
-    () => Array.from(new Set(result.sources.map((source) => affiliation(source.url)))).slice(0, 5),
-    [result],
-  );
+  const runnersUp = useMemo(() => result.analysis.consensus.slice(1, 3), [result]);
   const firstVotes = useMemo(
     () => result.analysis.advisors.filter(
       (advisor) => advisor.winnerIndex === result.analysis.winnerIndex,
@@ -151,7 +91,7 @@ export default function AdvisorInfographicPoster({
     const dataUrl = await toPng(node, {
       cacheBust: false,
       pixelRatio: 1,
-      backgroundColor: '#07162f',
+      backgroundColor: '#05070d',
       width: 1080,
       height: 1350,
       style: {
@@ -206,8 +146,8 @@ export default function AdvisorInfographicPoster({
       setVisualModel('deterministic-fallback');
       setGenerationError(
         english
-          ? 'AI artwork was unavailable, so the poster used the built-in visual fallback.'
-          : 'ภาพ AI ไม่พร้อมใช้งาน จึงใช้ภาพสำรองของระบบ แต่ข้อมูล MCDA และตัวอักษรยังถูกต้อง',
+          ? 'AI artwork was unavailable, so the poster used the built-in fallback.'
+          : 'ภาพ AI ไม่พร้อมใช้งาน จึงใช้ภาพสำรองของระบบ',
       );
     } finally {
       setVisualReady(true);
@@ -244,22 +184,23 @@ export default function AdvisorInfographicPoster({
   }, [capturePoster, english, visualReady, visualUrl]);
 
   const downloadName = `MCDA-Promo-${safeFilename(result.analysis.winnerName || 'result')}.png`;
+  const scopeLine = compactScope(scope);
 
   return (
     <section className={styles.wrap}>
       <div className={styles.previewHeader}>
         <div>
-          <span>{english ? 'AI-GENERATED ONE-PAGE INFOGRAPHIC' : 'AI INFOGRAPHIC + ONE PAGE สรุปผลอัตโนมัติ'}</span>
-          <strong>{english ? 'Semantic MCDA Campaign Visual' : 'Semantic MCDA Campaign Visual'}</strong>
+          <span>{english ? 'AI PROMOTIONAL POSTER' : 'AI PROMOTIONAL POSTER'}</span>
+          <strong>{english ? 'Cinematic MCDA Key Visual' : 'โปสเตอร์ประชาสัมพันธ์แบบ Cinematic'}</strong>
           <small>
             {english
-              ? 'AI artwork from the MCDA analysis + crisp programmatic typography.'
-              : 'AI สร้างภาพหลักจากผลวิเคราะห์จริง แล้วระบบวางตัวอักษรคมชัดทับอีกชั้น'}
+              ? 'Image-first communication with only essential copy.'
+              : 'เน้นภาพเพื่อการสื่อสาร เหลือข้อความเฉพาะที่จำเป็น'}
           </small>
         </div>
         <div className={styles.previewActions}>
           <button type="button" onClick={() => void generate()} disabled={generating}>
-            {generating ? (english ? 'Generating…' : 'กำลัง Gen ภาพ…') : (english ? 'Regenerate AI visual' : 'Gen รูปใหม่')}
+            {generating ? (english ? 'Generating…' : 'กำลัง Gen ภาพ…') : (english ? 'Regenerate visual' : 'Gen รูปใหม่')}
           </button>
           {pngUrl ? (
             <a href={pngUrl} download={downloadName}>
@@ -273,11 +214,11 @@ export default function AdvisorInfographicPoster({
         {generating ? (
           <div className={styles.loading}>
             <div className={styles.spinner} />
-            <strong>{english ? 'Creating the one-page infographic…' : 'กำลังสร้าง One-page Infographic…'}</strong>
-            <span>{english ? 'MCDA analysis → semantic artwork → bright typography → PNG' : 'ผล MCDA → ภาพตรงความหมาย → ตัวอักษรสว่างคมชัด → PNG'}</span>
+            <strong>{english ? 'Creating cinematic campaign artwork…' : 'กำลังสร้างภาพโปสเตอร์ประชาสัมพันธ์…'}</strong>
+            <span>{english ? 'MCDA result → cinematic key visual → minimal copy → PNG' : 'ผล MCDA → Key Visual → ข้อความน้อย → PNG'}</span>
           </div>
         ) : pngUrl ? (
-          <img src={pngUrl} alt={english ? 'MCDA AI infographic poster' : 'อินโฟกราฟิก AI สรุปผล MCDA'} />
+          <img src={pngUrl} alt={english ? 'MCDA promotional poster' : 'โปสเตอร์ประชาสัมพันธ์ MCDA'} />
         ) : (
           <div className={styles.failure}>
             <strong>{generationError}</strong>
@@ -297,110 +238,35 @@ export default function AdvisorInfographicPoster({
       ) : null}
 
       <div className={styles.captureStage} aria-hidden="true">
-        <div ref={posterRef} className={`${styles.poster} ${styles[theme.accent]}`}>
-          <div className={styles.glowOne} />
-          <div className={styles.glowTwo} />
-          <div className={styles.gridLines} />
+        <div ref={posterRef} className={styles.poster}>
+          <div className={styles.fallbackBackdrop} />
+          {visualUrl ? (
+            <img className={aiStyles.aiVisual} src={visualUrl} alt="" />
+          ) : (
+            <div className={styles.fallbackMark}>◆</div>
+          )}
+          <div className={aiStyles.aiVisualShade} />
 
           <header className={styles.topBar}>
             <div className={styles.brand}>
               <span>✦</span>
-              <div>
-                <b>MCDA</b>
-                <small>ADVISOR</small>
-              </div>
+              <b>MCDA ADVISOR</b>
             </div>
-            <div className={styles.methodCapsule}>TOPSIS · VIKOR · WASPAS · MOORA · PROMETHEE</div>
+            <div className={styles.badge}>{firstVotes}/5</div>
           </header>
 
-          <main className={styles.hero}>
-            <div className={styles.kicker}>{theme.kicker}</div>
-            <div className={styles.visualStage}>
-              {visualUrl ? (
-                <>
-                  <img className={aiStyles.aiVisual} src={visualUrl} alt="" />
-                  <div className={aiStyles.aiVisualShade} />
-                </>
-              ) : (
-                <>
-                  <div className={`${styles.orbit} ${styles.orbitOne}`} />
-                  <div className={`${styles.orbit} ${styles.orbitTwo}`} />
-                  <div className={styles.visualHalo} />
-                  <div className={styles.heroIcon}>{theme.icon}</div>
-                  <div className={styles.chartGlyph}>
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                    <b>↗</b>
-                  </div>
-                </>
-              )}
-              <div className={styles.choiceBadge}>
-                <small>{english ? 'MCDA BEST CHOICE' : 'MCDA BEST CHOICE'}</small>
-                <strong>{firstVotes}/5</strong>
-                <span>{english ? 'first-place votes' : 'วิธีให้อันดับ 1'}</span>
-              </div>
-            </div>
-
-            <div className={styles.heroCopy}>
-              <span>{english ? 'RECOMMENDED' : 'ทางเลือกที่แนะนำ'}</span>
-              <h1>{result.analysis.winnerName}</h1>
-              <p>{compactScope(scope)}</p>
-            </div>
+          <main className={styles.heroCopy}>
+            <span>{english ? 'RECOMMENDED' : 'ทางเลือกที่แนะนำ'}</span>
+            <h1>{result.analysis.winnerName}</h1>
+            {scopeLine ? <p>{scopeLine}</p> : null}
           </main>
 
-          <section className={styles.sellingPoints}>
-            {topFactors.map((factor, index) => (
-              <div key={factor.criterionId}>
-                <span>{['01', '02', '03'][index]}</span>
-                <b>{factor.criterionName}</b>
-                <strong>{pct(factor.weight)}</strong>
-              </div>
-            ))}
-          </section>
-
-          <section className={styles.consensusStrip}>
-            <div className={styles.consensusLead}>
-              <small>{english ? 'DECISION CONSENSUS' : 'DECISION CONSENSUS'}</small>
-              <strong>{pct(result.analysis.agreement)}</strong>
-            </div>
-            <div className={styles.methods}>
-              {result.analysis.advisors.map((advisor) => (
-                <div key={advisor.method}>
-                  <span>{advisor.method}</span>
-                  <b>{advisor.winnerIndex === result.analysis.winnerIndex ? '✓' : '•'}</b>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {runnersUp.length ? (
-            <section className={styles.runners}>
-              <small>{english ? 'OTHER OPTIONS' : 'ทางเลือกอื่นที่น่าสนใจ'}</small>
-              <div>
-                {runnersUp.map((item) => (
-                  <span key={item.alternativeIndex}>
-                    <b>#{item.rank}</b> {item.alternativeName}
-                  </span>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           <footer className={styles.posterFooter}>
-            <div className={styles.sourceLine}>
-              <small>{english ? 'TRUSTED DATA' : 'TRUSTED DATA'}</small>
-              <div>
-                {sourceBadges.length
-                  ? sourceBadges.map((source) => <span key={source}>{source}</span>)
-                  : <span>MCDA DATA</span>}
-              </div>
+            <div>
+              <b>{Math.round(result.analysis.agreement * 100)}%</b>
+              <span>{english ? 'MCDA consensus' : 'ความเห็นสอดคล้อง'}</span>
             </div>
-            <div className={styles.footerBrand}>
-              <b>MCDA Advisor Bot</b>
-              <small>{english ? 'Evidence → Entropy → Decision' : 'Evidence → Entropy → Decision'}</small>
-            </div>
+            <small>TOPSIS · VIKOR · WASPAS · MOORA · PROMETHEE</small>
           </footer>
         </div>
       </div>
