@@ -41,10 +41,10 @@ function buildPrompt(body: z.infer<typeof requestSchema>) {
     : 'กลุ่มผู้ชมเป็นภาษาไทย แต่ห้ามสร้างตัวอักษรภาษาไทยลงในภาพ เพราะระบบจะวางข้อความจริงทับภายหลัง';
 
   return `
-สร้าง รูป Infographic + One page + นำเสนอ + โฆษณา + ดึงดูด + สีสัน + premium commercial campaign visual + modern editorial data-storytelling + cinematic hero image + professional business presentation.
+สร้างภาพประชาสัมพันธ์แบบ Movie Poster + Cinematic Advertising Key Visual + Premium Campaign Poster + Hero Image + ดึงดูดสายตา + สีสันคมชัด + เน้นภาพเพื่อการสื่อสาร + ข้อความน้อยมาก.
 
 PURPOSE
-Create the VISUAL ART LAYER for an MCDA Advisor one-page infographic. The final application will overlay exact headings, scores, and Thai/English text programmatically, so the generated artwork must be visually rich but must NOT contain any readable words, letters, numbers, logos, watermarks, pseudo-text, random glyphs, or fake UI text.
+Create the HERO ARTWORK for an MCDA Advisor promotional poster. Think like a premium movie poster or major brand campaign: one unforgettable scene, one dominant focal subject, cinematic storytelling, emotional impact, dramatic depth, and immediate visual meaning. The application will add the exact title and a tiny amount of supporting copy afterward, so the artwork itself must NOT contain readable words, letters, numbers, logos, watermarks, pseudo-text, random glyphs, charts, dashboards, or fake UI text.
 
 DECISION RESULT TO VISUALIZE
 Winner / recommended option: ${analysis.winnerName}
@@ -65,18 +65,16 @@ Constraints: ${scope.constraints || '-'}
 Other strong alternatives: ${analysis.runnersUp.join(', ') || '-'}
 
 ART DIRECTION
-- Translate the ACTUAL meaning of the winner and business context into a concrete hero scene, product/service environment, people/activity, objects, architecture, materials, or business situation that viewers immediately understand.
-- Do NOT use generic emojis, floating icons, meaningless abstract blobs, generic robot heads, random laptops, or stock-looking business handshakes unless they are truly relevant to the decision.
-- Make the visual attractive enough for social media advertising, a pitch deck cover, and a premium one-page infographic.
-- Use strong depth, premium lighting, sophisticated composition, realistic or polished semi-realistic rendering, clean geometry, and meaningful data-inspired visual motifs.
-- Prioritize semantic accuracy over decoration.
-- Bright luminous highlights, high local contrast, vivid but controlled color palette, modern cyan/violet/emerald/gold accents on deep navy or charcoal where appropriate.
-- Keep the central hero subject large and unmistakable.
-- Leave generous clean negative-space zones near the top and lower third for bright overlay typography.
-- Avoid clutter behind text-safe areas.
-- Vertical 4:5 composition, suitable for 1080x1350.
-- No frames that crop the main subject awkwardly.
-- No readable text of any kind inside the image.
+- Treat this as a MOVIE POSTER / ADVERTISING KEY VISUAL, not an infographic and not a dashboard.
+- Communicate the recommended option primarily through a single cinematic hero scene. The viewer should understand the business idea from the image before reading any text.
+- Make the winner feel like the protagonist of the poster. Use people, products, environments, architecture, materials, atmosphere, action, or symbolic visual storytelling that directly fits the real recommendation.
+- Favor a bold central composition, dramatic foreground/background separation, premium lighting, cinematic lensing, realistic or polished high-end illustration, rich texture, depth, and controlled visual spectacle.
+- Avoid generic business graphics, charts, scorecards, UI panels, floating icons, generic robots, random laptops, stock handshakes, and decorative blobs unless indispensable to the subject.
+- Use very little empty infographic space. Instead, compose the scene so that the lower 25–30% can accept a large movie-poster title without covering the main focal subject.
+- Keep a small clean corner for a subtle MCDA badge if needed.
+- Vivid but sophisticated color grading; strong contrast; luminous highlights; premium campaign aesthetic.
+- Vertical 4:5 composition for 1080x1350 social media / promotional poster use.
+- No readable text of any kind inside the generated image.
 - No logo, no watermark.
 - ${languageNote}
 
